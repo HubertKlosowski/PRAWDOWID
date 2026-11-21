@@ -9,8 +9,33 @@
 <label for="material" id="prompt">Treść lub adres artykułu</label>
 <textarea required maxlength="12000" rows="6" id="material" name="material">{{ form.material.value|default:'' }}</textarea>
 {{ form.errors }}<button type="submit">Sprawdź informację</button><span id="progress" role="status"></span></form></section>
-<aside><h2>Jak odczytać wynik?</h2><dl><dt>Potwierdzone</dt><dd>Przytoczone źródła wspierają twierdzenie.</dd><dt>Zaprzeczone</dt><dd>Źródła zawierają dowody przeciwko twierdzeniu.</dd><dt>Niezweryfikowane</dt><dd>Brakuje danych do rozstrzygnięcia.</dd></dl></aside></div>
-{% if result %}<section class="card result" id="wynik" tabindex="-1"><h2>Wynik weryfikacji</h2><h3>{{ result.label|capfirst|lower|capfirst }}</h3><p>{{ result.explanation }}</p>
-{% if result.class_scores %}<h4>Nieskalibrowane szacunki modelu</h4><ul>{% for label,score in result.class_scores.items %}<li>{{ label|lower|capfirst }} <strong>{{ score|floatformat:2 }}</strong></li>{% endfor %}</ul>{% endif %}
-{% if result.evidence %}<h4>Dowody ze źródeł</h4>{% for e in result.evidence %}<article><strong>{% if e.relation == 'supports' %}Za{% elif e.relation == 'contradicts' %}Przeciw{% else %}Kontekst{% endif %}</strong><blockquote>{{ e.quote }}</blockquote><a href="{{ e.url }}" rel="noopener noreferrer">{{ e.title }}</a><p>Pobrano {{ e.fetched_at }}</p></article>{% endfor %}{% endif %}</section>{% endif %}</main>
+<aside><h2>Jak odczytać wynik?</h2><dl><dt>Potwierdzone</dt><dd>Przytoczone źródła wspierają twierdzenie.</dd><dt>Zaprzeczone</dt><dd>Źródła zawierają dowody przeciwko twierdzeniu.</dd><dt>Brak rozstrzygnięcia</dt><dd>Dowody nie pozwalają rozstrzygnąć twierdzenia.</dd></dl></aside></div>
+{% if result %}
+<section class="card result" id="wynik" tabindex="-1" data-status="{{ result.status }}">
+  <h2>Wynik weryfikacji</h2>
+  {% if result.status == "resolved" %}
+    <h3>{% if result.verdict == "true" %}Potwierdzone{% else %}Zaprzeczone{% endif %}</h3>
+    <p>{{ result.explanation }} <a href="#dowody">Zobacz dowody</a>.</p>
+  {% else %}
+    <h3>{% if result.status == "needs_clarification" %}Doprecyzuj zgłoszenie{% elif result.status == "out_of_scope" %}Poza zakresem weryfikacji{% elif result.status == "technical_error" %}Błąd techniczny{% else %}Brak rozstrzygnięcia{% endif %}</h3>
+    <p>{{ result.explanation }}</p>
+  {% endif %}
+  {% if result.class_scores %}
+    <h4>Szacunki modelu dla klas</h4>
+    <p>Szacunki są nieskalibrowane. Wiarygodność twierdzenia oceń na podstawie dowodów.</p>
+    <ul>{% for label,score in result.class_scores.items %}<li>{{ label|lower|capfirst }} <strong>{{ score|floatformat:2 }}</strong></li>{% endfor %}</ul>
+  {% endif %}
+  {% if result.evidence %}
+    <h4 id="dowody">Dowody ze źródeł</h4>
+    {% for e in result.evidence %}
+      <article>
+        <strong>{% if e.relation == 'supports' %}Za{% elif e.relation == 'contradicts' %}Przeciw{% else %}Kontekst{% endif %}</strong>
+        <blockquote>{{ e.quote }}</blockquote>
+        <a href="{{ e.url }}" rel="noopener noreferrer">{{ e.title }}</a>
+        <p>Dokument {{ e.document_id }}, fragment {{ e.position|add:1 }}. Pobrano {{ e.fetched_at }}.</p>
+      </article>
+    {% endfor %}
+  {% endif %}
+</section>
+{% endif %}</main>
 <script src="{% static 'verify/form.js' %}"></script></body></html>

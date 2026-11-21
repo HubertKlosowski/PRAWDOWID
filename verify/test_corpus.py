@@ -8,7 +8,7 @@ import pyarrow.parquet as pq
 from django.test import SimpleTestCase
 
 from .ingest import chunk_text, snapshot_documents
-from .retrieval import retrieve
+from .retrieval import search
 
 
 class CorpusTests(SimpleTestCase):
@@ -48,13 +48,12 @@ class CorpusTests(SimpleTestCase):
     @patch("verify.retrieval.Chunk.objects")
     def test_empty_corpus_skips_query_embedding(self, objects, embed):
         objects.filter.return_value.exists.return_value = False
-        self.assertEqual(retrieve("Treść"), [])
+        self.assertEqual(search("Treść", 15), [])
         embed.assert_not_called()
 
     @patch("verify.retrieval.embed", return_value=[[1.0, 0.0]])
     def test_retrieval_sql_orders_by_cosine_and_limits(self, embed):
         with (
-            patch.dict("os.environ", RAG_TOP_K="5"),
             patch("django.db.models.query.QuerySet.exists", return_value=True),
             patch("django.db.models.query.QuerySet._fetch_all", autospec=True) as execute,
         ):
@@ -65,5 +64,5 @@ class CorpusTests(SimpleTestCase):
                 self.assertEqual(queryset.query.high_mark, 15)
                 queryset._result_cache = []
             execute.side_effect = record
-            self.assertEqual(retrieve("Treść"), [])
+            self.assertEqual(search("Treść", 15), [])
         embed.assert_called_once_with(["Treść"], query=True)

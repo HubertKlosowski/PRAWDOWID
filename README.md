@@ -55,4 +55,15 @@ uv run python manage.py test
 
 Testy jednostkowe korzystają z atrap inferencji i połączeń sieciowych. Formularz przyjmuje do 12 000 znaków. Pobieranie URL obsługuje HTML i zwykły tekst. Gdy strona wymaga JavaScriptu lub artykuł jest zbyt długi, można wkleić fragment ręcznie. Materiał użytkownika służy wyłącznie bieżącej analizie.
 
-Aplikacja sprawdza identyfikatory wybranych fragmentów i dosłowność cytatów. Dobór dowodów, interpretacja cytatu oraz przypisana klasa pozostają oceną modelu. Gdy selekcja zwróci pustą listę, końcowa ocena sprawdza najwyżej sklasyfikowane fragmenty z pgvector do limitu RAG_TOP_K. Wynik potwierdzający lub zaprzeczający wymaga cytatu z tych źródeł. Błąd usługi lub niepoprawna odpowiedź modelu daje wynik „Niezweryfikowane” z komunikatem o błędzie.
+Aplikacja zwraca `resolved` z werdyktem i klikalnymi cytatami albo jeden ze statusów bez werdyktu. `abstained` oznacza niewystarczające lub sprzeczne dowody albo niedostępny materiał. `needs_clarification` prosi o doprecyzowanie tezy. `out_of_scope` dotyczy zadań innych niż sprawdzanie twierdzeń faktograficznych. `technical_error` oznacza awarię wyszukiwania lub brak poprawnej odpowiedzi modelu.
+
+Model wybiera identyfikatory gotowych cytatów. Druga ocena sprawdza ich związek z całą tezą bez dostępu do proponowanego werdyktu. Rozstrzygnięcie wymaga zgodności obu ocen. Przy sprzecznych relacjach aplikacja wstrzymuje rozstrzygnięcie. Cytaty, ich metadane i tekst objaśnienia pochodzą z aplikacji. Ocena związku cytatu z tezą zależy od modelu. Po pustej selekcji fragmentów ocena korzysta z najbliższych wyników pgvector, do limitu RAG_TOP_K.
+
+## Weryfikacja z terminala
+
+```bash
+uv run python manage.py verify_claim --text "Regionalny System Ostrzegania jest darmowy."
+uv run python manage.py verify_claim --url "https://example.org/artykul"
+```
+
+Komenda zwraca wynik w JSON-ie i wywołuje tę samą usługę `verify(...)` co formularz WWW. Usługa przyjmuje opcjonalne adaptery `complete(system_prompt, data)` i `search(text, limit)`. Domyślny adapter modelu korzysta z konfiguracji opisanej wyżej, a domyślny adapter wyszukiwania zwraca uporządkowane fragmenty z pgvector wraz z metadanymi źródeł.

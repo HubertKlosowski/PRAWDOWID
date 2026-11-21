@@ -20,6 +20,10 @@ SKIP = set("script style template noscript nav footer aside form svg iframe head
 BLOCK = set("p div article section main li br hr h1 h2 h3 h4 tr td ul ol".split())
 
 
+class SourceUnavailable(ValueError):
+    """The URL was accepted but yielded no usable material."""
+
+
 class ArticleParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -43,7 +47,7 @@ class ArticleParser(HTMLParser):
         if tag not in VOID:
             attrs = dict(attrs)
             if len(self.stack) >= 128:
-                raise ValueError("Zbyt głęboka struktura strony.")
+                raise SourceUnavailable("Zbyt głęboka struktura strony.")
             self.stack.append((tag, "hidden" in attrs or attrs.get("aria-hidden") == "true"))
 
     def handle_endtag(self, tag):
@@ -62,7 +66,7 @@ def extract(body, mime, charset, fallback_title):
         decoder = codecs.lookup(charset or "utf-8")
         content = body.decode(decoder.name, errors="replace")
     except (LookupError, UnicodeError) as exc:
-        raise ValueError("Nieobsługiwane kodowanie strony.") from exc
+        raise SourceUnavailable("Nieobsługiwane kodowanie strony.") from exc
     title = fallback_title
     if mime != "text/plain":
         parser = ArticleParser()
@@ -70,7 +74,7 @@ def extract(body, mime, charset, fallback_title):
             parser.feed(content)
             parser.close()
         except AssertionError as exc:
-            raise ValueError("Nie udało się odczytać struktury HTML.") from exc
+            raise SourceUnavailable("Nie udało się odczytać struktury HTML.") from exc
         title = " ".join("".join(parser.parts["title"]).split()) or title
         content = ""
         for tag in ("main", "article", "body"):
@@ -79,7 +83,7 @@ def extract(body, mime, charset, fallback_title):
                 break
     text = "\n".join(line for raw in content.splitlines() if (line := " ".join(raw.split())))
     if not text:
-        raise ValueError("Strona nie zawiera dostępnego tekstu.")
+        raise SourceUnavailable("Strona nie zawiera dostępnego tekstu.")
     return title[:500], text
 
 
@@ -98,7 +102,7 @@ def _target(url, allowed_hosts):
         raise ValueError("Dozwolone są standardowe porty HTTP i HTTPS.")
     records = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     if not records:
-        raise ValueError("Brak adresu serwera.")
+        raise SourceUnavailable("Brak adresu serwera.")
     for _, _, _, _, addr in records:
         ip = ipaddress.ip_address(addr[0])
         if not ip.is_global or ip.is_multicast or ip.is_reserved:
@@ -117,7 +121,7 @@ def _target(url, allowed_hosts):
 def _remaining(deadline):
     left = deadline - time.monotonic()
     if left <= 0:
-        raise ValueError("Minął limit czasu pobierania strony.")
+        raise SourceUnavailable("Minął limit czasu pobierania strony.")
     return left
 
 
@@ -151,17 +155,17 @@ def _request(url, host, port, record, deadline, *, robots=False):
                 if response.status in REDIRECTS:
                     location = response.getheader("Location")
                     if not location:
-                        raise ValueError("Przekierowanie bez adresu docelowego.")
+                        raise SourceUnavailable("Przekierowanie bez adresu docelowego.")
                     return location, None
                 if robots and response.status in {404, 410}:
                     return None, ""
                 if response.status != 200:
-                    raise ValueError(f"Serwer źródła zwrócił HTTP {response.status}.")
+                    raise SourceUnavailable(f"Serwer źródła zwrócił HTTP {response.status}.")
                 mime = response.headers.get_content_type()
                 if mime not in {"text/html", "application/xhtml+xml", "text/plain"}:
-                    raise ValueError("Strona musi zawierać HTML lub zwykły tekst.")
+                    raise SourceUnavailable("Strona musi zawierać HTML lub zwykły tekst.")
                 if response.getheader("Content-Encoding", "identity").lower() != "identity":
-                    raise ValueError("Nieobsługiwana kompresja odpowiedzi.")
+                    raise SourceUnavailable("Nieobsługiwana kompresja odpowiedzi.")
                 body = bytearray()
                 while len(body) <= MAX_BYTES:
                     _remaining(deadline)
@@ -171,7 +175,7 @@ def _request(url, host, port, record, deadline, *, robots=False):
                             return None, body.decode("utf-8-sig", errors="replace")
                         return None, extract(body, mime, response.headers.get_content_charset(), host)
                     body.extend(chunk)
-                raise ValueError("Strona przekracza limit rozmiaru.")
+                raise SourceUnavailable("Strona przekracza limit rozmiaru.")
 
 
 def fetch(url, *, allowed_hosts=None):
@@ -198,5 +202,5 @@ def fetch(url, *, allowed_hosts=None):
                 return url, *result
             url = urljoin(url, location)
     except (OSError, http.client.HTTPException, UnicodeError) as exc:
-        raise ValueError("Nie udało się pobrać strony w wyznaczonym czasie lub nawiązać połączenia.") from exc
-    raise ValueError("Zbyt wiele przekierowań.")
+        raise SourceUnavailable("Nie udało się połączyć ze stroną lub pobrać jej w wyznaczonym czasie.") from exc
+    raise SourceUnavailable("Zbyt wiele przekierowań.")

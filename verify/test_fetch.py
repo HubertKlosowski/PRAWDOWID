@@ -67,7 +67,7 @@ class FetchTests(TestCase):
                 response.getheader.side_effect = lambda key, default=None: default
                 response.read1.side_effect = [body, b""]
                 connection.return_value.getresponse.return_value.__enter__.return_value = response
-                with self.assertRaisesRegex(ValueError, expected):
+                with self.assertRaisesRegex(web.SourceUnavailable, expected):
                     web._request("http://example.org/", "example.org", 80,
                                  record("1.1.1.1"), time.monotonic() + 2)
 
