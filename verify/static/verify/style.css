@@ -84,16 +84,7 @@ h1 span, a { color: var(--accent); }
 .result-guide-content p, .result-guide-content dd:last-child { margin-bottom: 0; }
 h2 { margin: 0 0 20px; font-size: 1.35rem; letter-spacing: -.03em; }
 
-fieldset {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  border: 0;
-  padding: 0;
-  margin: 0 0 20px;
-}
-
-.visually-hidden, legend {
+.visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -102,20 +93,8 @@ fieldset {
   white-space: nowrap;
 }
 
-fieldset label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  padding: 8px 13px;
-  background: #f0f5f2;
-  cursor: pointer;
-}
-
-fieldset label:has(:checked) { background: #dcefe5; border-color: #9dcbbb; }
-input { margin: 0; accent-color: var(--accent); }
 #prompt, dt { font-weight: 650; }
+#url-hint { margin: 0 0 14px; color: var(--muted); }
 
 textarea {
   width: 100%;

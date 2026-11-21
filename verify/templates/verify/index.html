@@ -5,9 +5,9 @@
 <div class="layout"><section class="card"><h2>Materiał do sprawdzenia</h2>
 {% if elapsed_seconds is not None %}<p>Czas weryfikacji <strong>{{ elapsed_seconds|floatformat:2 }} s</strong></p>{% endif %}
 <form method="post" id="verify">{% csrf_token %}
-<fieldset><legend>Rodzaj materiału</legend><label><input type="radio" name="mode" value="text" {% if form.mode.value != "url" %}checked{% endif %}> Tekst</label><label><input type="radio" name="mode" value="url" {% if form.mode.value == "url" %}checked{% endif %}> Adres URL</label></fieldset>
-<label for="material" id="prompt">Treść lub adres artykułu</label>
+<label for="material" id="prompt">Wklej tekst lub adres strony</label>
 <textarea required maxlength="12000" rows="6" id="material" name="material">{{ form.material.value|default:'' }}</textarea>
+<p id="url-hint" role="status" hidden>Pobierzemy treść tej strony.</p>
 {{ form.errors }}
 <button type="submit">Sprawdź informację</button>
 </form>

@@ -15,6 +15,8 @@ class VerificationPageTests(SimpleTestCase):
     def test_form_available(self):
         response = self.client.get("/")
         self.assertContains(response, "Sprawdź informację")
+        self.assertContains(response, "Wklej tekst lub adres strony")
+        self.assertNotContains(response, 'name="mode"')
         self.assertNotContains(response, "Czas weryfikacji")
 
     @patch("verify.views.perf_counter", side_effect=[10, 11.25])
@@ -22,7 +24,9 @@ class VerificationPageTests(SimpleTestCase):
     @patch("verify.verification.fetch", return_value=("https://example.org/", "Tytuł", "Treść materiału"))
     @patch("verify.analysis._request_completion", return_value={"status": "checkable"})
     def test_url_uses_extracted_text(self, complete, fetch, retrieve, clock):
-        response = self.client.post("/", {"mode": "url", "material": "https://example.org/"})
+        url = "HTTPS://example.org/?id=1"
+        response = self.client.post("/", {"material": f"  {url}\n"})
+        fetch.assert_called_once_with(url)
         retrieve.assert_called_once()
         self.assertEqual(retrieve.call_args.args[0], "Treść materiału")
         complete.assert_called_once_with(INTENT_PROMPT, {"material": "Treść materiału"})
@@ -34,14 +38,30 @@ class VerificationPageTests(SimpleTestCase):
 
     @patch("verify.verification.search_corpus")
     def test_invalid_url_stops_before_retrieval(self, retrieve):
-        response = self.client.post("/", {"mode": "url", "material": "file:///example"})
+        response = self.client.post("/", {"material": "https:///example"})
         self.assertTrue(response.context["form"].errors)
         retrieve.assert_not_called()
+
+    @patch("verify.verification.fetch")
+    @patch("verify.verification.search_corpus", return_value=[])
+    @patch("verify.analysis._request_completion", return_value={"status": "checkable"})
+    def test_urls_in_text_do_not_trigger_fetch(self, complete, retrieve, fetch):
+        for text in (
+            "Sprawdź wiadomość opisaną na https://example.org/",
+            "https://example.org/ podaje, że zamknięto drogę.",
+            "https://example.org/\nhttps://example.com/",
+            "file:///example",
+        ):
+            with self.subTest(text=text):
+                response = self.client.post("/", {"material": text})
+                self.assertContains(response, 'data-status="abstained"')
+                self.assertEqual(retrieve.call_args.args[0], text)
+        fetch.assert_not_called()
 
     @patch("verify.verification.search_corpus")
     @patch("verify.verification.fetch", side_effect=SourceUnavailable("Strona nie zawiera dostępnego tekstu."))
     def test_unavailable_url_abstains(self, fetch, retrieve):
-        response = self.client.post("/", {"mode": "url", "material": "https://example.org/"})
+        response = self.client.post("/", {"material": "https://example.org/"})
         self.assertContains(response, 'data-status="abstained"')
         self.assertContains(response, "Strona nie zawiera dostępnego tekstu.")
         self.assertIsNone(response.context["result"]["verdict"])
@@ -61,7 +81,7 @@ class VerificationPageTests(SimpleTestCase):
             ("RSO jest darmowy.", "technical_error", "Błąd techniczny"),
         ):
             with self.subTest(status=status):
-                response = self.client.post("/", {"mode": "text", "material": text})
+                response = self.client.post("/", {"material": text})
                 self.assertContains(response, f'data-status="{status}"')
                 self.assertContains(response, f"<h3>{heading}</h3>", html=True)
                 self.assertIsNone(response.context["result"]["verdict"])
@@ -70,7 +90,7 @@ class VerificationPageTests(SimpleTestCase):
     @patch("verify.verification.search_corpus", side_effect=RuntimeError)
     def test_retrieval_failure_returns_technical_error(self, retrieve):
         with self.assertLogs("verify.verification", level="WARNING"):
-            response = self.client.post("/", {"mode": "text", "material": "RSO jest darmowy."})
+            response = self.client.post("/", {"material": "RSO jest darmowy."})
         self.assertContains(response, 'data-status="technical_error"')
         self.assertContains(response, "Wyszukiwanie źródeł jest chwilowo niedostępne.")
         self.assertIsNone(response.context["result"]["verdict"])
@@ -118,7 +138,7 @@ class VerificationPageTests(SimpleTestCase):
         with patch.dict("os.environ", RAG_TOP_K="2"):
             for mode, value in (("text", material), ("url", "https://example.org/")):
                 with self.subTest(mode=mode):
-                    response = self.client.post("/", {"mode": mode, "material": value})
+                    response = self.client.post("/", {"material": value})
                     self.assertContains(response, 'data-status="abstained"')
                     self.assertContains(response, "Źródła zawierają sprzeczne dowody.")
                     self.assertContains(response, "Dowód za.")
@@ -143,8 +163,8 @@ class VerificationPageTests(SimpleTestCase):
             ABSTENTION,
         ]
         with patch.dict("os.environ", RAG_TOP_K="2"):
-            recovered = self.client.post("/", {"mode": "text", "material": material})
-            unverified = self.client.post("/", {"mode": "text", "material": "Inne twierdzenie"})
+            recovered = self.client.post("/", {"material": material})
+            unverified = self.client.post("/", {"material": "Inne twierdzenie"})
         self.assertEqual(complete.call_count, 5)
         for call in (complete.call_args_list[1], complete.call_args_list[4]):
             prompt, data = call.args

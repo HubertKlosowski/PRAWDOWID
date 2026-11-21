@@ -29,6 +29,9 @@ cuda-kernels = [
     "causal-conv1d==1.6.2.post1+cu.12.8.torch.2.11; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "flash-linear-attention[cuda]>=0.5,<0.6; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
+discord = [
+    "discord-py>=2.5,<3",
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

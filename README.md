@@ -83,3 +83,21 @@ Komenda zwraca wynik w JSON-ie i wywołuje tę samą usługę `verify(...)` co f
 Uruchom `uv run python manage.py migrate`, a następnie ponów import migawki lub skonfigurowanych stron, aby uzupełnić metadane istniejących dokumentów. Datę publikacji zapisujemy wtedy, gdy pochodzi z migawki lub jawnych metadanych HTML. Czas pobrania jest przechowywany w dotychczasowym polu bazy `fetched_at` i jest dostępny jako `retrieved_at` w wyniku weryfikacji. Zgrupowane rekordy migawki mają metadane wspólne dla całego dokumentu, jeśli rekordy są zgodne. Daty przypisane do poszczególnych rekordów pozostają również w ich treści.
 
 Wśród wyników pgvector pierwszeństwo mają źródła pasujące do okresu tezy. Przedziały ważności poza tym okresem są odrzucane. Dla pytań o stan bieżący bez przedziału ważności wymagamy publikacji lub początku ważności z bieżącego dnia i model nadal ocenia treść. Rozpoznawanie okresu w kodzie obejmuje typowe daty, lata i proste określenia względne. Pozostałe sformułowania interpretuje model. Daty bez strefy czasowej z polskiej migawki są interpretowane w strefie `Europe/Warsaw`.
+
+### Discord — komenda `/sprawdz`
+
+Adapter korzysta z Discord Gateway. Komputer z demonstratorem potrzebuje połączenia wychodzącego z Discordem. Pole **Interactions Endpoint URL** w konfiguracji aplikacji pozostaw puste.
+
+1. W [Discord Developer Portal](https://discord.com/developers/applications) utwórz osobną aplikację dla PRAWDOWID. W zakładce **Bot** wygeneruj token. W zakładce **Installation** skonfiguruj **Guild Install** z zakresami `bot` i `applications.commands`, następnie przez link instalacyjny dodaj aplikację na swój serwer demonstracyjny. Wystarczą zwykłe uprawnienia do kanału, wysyłania wiadomości i załączania plików.
+2. W Discordzie włącz tryb dewelopera i skopiuj identyfikator serwera. W lokalnym pliku `.env` ustaw `DISCORD_BOT_TOKEN` i `DISCORD_GUILD_ID`. Token zachowaj w tajemnicy.
+3. Dla lokalnej bazy demonstracyjnej uruchom poniższy skrypt. Korzysta z tego samego katalogu bazy co `run-demo.sh` (`/tmp/prawdowid-pg/db`), wczytuje `.env` i uruchamia bota. Baza z korpusem powinna być już przygotowana.
+
+   ```bash
+   ./run-discord-demo.sh
+   ```
+
+4. Na kanale serwera wybierz `/sprawdz`, wpisz w pole `material` twierdzenie lub sam adres HTTPS i wyślij. Wynik widzi osoba wywołująca komendę. Podczas pokazu sprawdź twierdzenie objęte korpusem, otwórz źródło w odpowiedzi, a następnie wyślij twierdzenie spoza korpusu.
+
+Przy innej bazie ustaw jej zmienne połączenia i uruchom `uv run --locked --extra discord --env-file .env python manage.py run_discord`. Bot działa jako osobny proces i obsługuje jedną analizę naraz. Przy lokalnej inferencji jednoczesne uruchomienie bota i WWW wymaga pamięci na modele obu procesów. Komenda działa również przy wyłączonym serwerze WWW. Bot kończy oczekiwanie po 14 minutach. Rozpoczęta analiza może jeszcze zajmować model. Długie raporty są dostępne w załączniku tekstowym.
+
+Test adaptera z atrapami Discorda i weryfikacji uruchom poleceniem `uv run --extra discord python manage.py test verify.test_discord`.

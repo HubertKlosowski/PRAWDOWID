@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import sys
 
 from django.utils import timezone
@@ -18,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 class InvalidMaterial(ValueError):
     """The submission failed input validation."""
+
+
+def material_mode(material):
+    return "url" if re.fullmatch(r"https?://\S*", material.strip(), flags=re.IGNORECASE) else "text"
 
 
 def verify(material, *, mode="text", complete=None, search=None):

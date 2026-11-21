@@ -78,7 +78,7 @@ class VerificationArchitectureTests(SimpleTestCase):
         complete.side_effect = [{"chunk_ids": ["42"]}, REPLY, REVIEW] * 4
         for mode, value in (("text", "Twierdzenie"), ("url", "https://example.org/article")):
             with self.subTest(mode=mode):
-                web = self.client.post("/", {"mode": mode, "material": value})
+                web = self.client.post("/", {"material": value})
                 output = StringIO()
                 call_command("verify_claim", f"--{mode}", value, stdout=output)
                 self.assertEqual(web.context["result"]["status"], "resolved")
