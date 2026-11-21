@@ -25,6 +25,14 @@ Przy aktualizacji z 4B migracja zachowuje dokumenty i teksty fragmentów, a usuw
 
 Domyślnie oba modele działają w procesie aplikacji i są ładowane przy pierwszym użyciu. Wymagają pamięci na oba zestawy wag. Na CPU czas odpowiedzi może być długi. Przy gotowym cache można ustawić HF_HUB_OFFLINE=1, a na CPU ograniczyć liczbę wątków przez OMP_NUM_THREADS.
 
+Na Linux x86-64 z kartą NVIDIA uruchom Qwen3.5 z opcjonalnymi kernelami CUDA. Pakiet `causal-conv1d` jest skompilowany dla wersji PyTorch 2.11 i CUDA 12.8 używanych przez projekt.
+
+```bash
+PRAWDOWID_LLM_DEVICE=cuda uv run --extra cuda-kernels python manage.py runserver
+```
+
+Polecenie wymaga pamięci GPU na model oceniający. Możesz ustawić `QWEN_DEVICE=cpu`, aby zwolnić pamięć GPU zajmowaną przez model embeddingowy. Przy powrocie do pracy na CPU uruchom `uv sync`, aby usunąć opcjonalne kernele CUDA ze środowiska. Tryb CPU używa implementacji referencyjnej PyTorch.
+
 | Zmienna | Znaczenie |
 | --- | --- |
 | QWEN_EMBEDDING_PATH | Opcjonalna ścieżka do lokalnej kopii Qwen3-Embedding-0.6B (1024 wymiary). Domyślnie `Qwen/Qwen3-Embedding-0.6B` |
