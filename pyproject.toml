@@ -1,7 +1,7 @@
 [project]
 name = "prawdowid"
 version = "0.1.0"
-description = "Add your description here"
+description = "Weryfikacja informacji na podstawie źródeł instytucjonalnych"
 readme = "README.md"
 authors = [
     { email = "259275@edu.p.lodz.pl" }
@@ -9,6 +9,9 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "django>=5.2,<5.3",
+    "psycopg[binary]>=3.2,<4",
+    "pgvector>=0.3,<1",
+    "pyarrow>=18",
     "matplotlib>=3.11.2",
     "numpy>=2.5.5",
     "pandas>=3.1.1",
@@ -38,3 +41,6 @@ basal = { git = "https://github.com/rkinas/basal.git" }
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
 build-backend = "uv_build"
+
+[tool.uv]
+package = false

@@ -1,0 +1,3 @@
+# Statyczne dokumenty do pobierania. Dynamiczne komunikaty zawiera migawka Parquet.
+https://www.gov.pl/web/mswia/regionalny-system-ostrzegania
+https://www.gov.pl/web/rcb/raport-dobowy3
