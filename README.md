@@ -1,6 +1,6 @@
 # PRAWDOWID
 
-Aplikacja Django porównuje tekst lub artykuł z korpusem instytucjonalnym. Qwen3-Embedding-4B koduje materiał i fragmenty dokumentów. PostgreSQL z pgvector zwraca najbliższe fragmenty, a osobny model ocenia twierdzenie. Widok wyniku pokazuje uzasadnienie, nieskalibrowane oceny klas i cytaty z linkami do dokumentów.
+Aplikacja Django porównuje tekst lub artykuł z korpusem instytucjonalnym. Qwen3-Embedding-0.6B koduje materiał i fragmenty dokumentów. PostgreSQL z pgvector zwraca pulę najbliższych fragmentów. Model oceniający wybiera z niej bezpośrednie dowody, a następnie ocenia twierdzenie na ich podstawie. Widok wyniku pokazuje uzasadnienie, nieskalibrowane oceny klas i cytaty z linkami do dokumentów.
 
 ## Uruchomienie lokalne
 
@@ -10,7 +10,7 @@ Potrzebne są Python 3.12, uv oraz działający PostgreSQL z zainstalowanym rozs
 uv sync
 uv run python manage.py migrate
 uv run hf download Qwen/Qwen3.5-4B
-uv run hf download Qwen/Qwen3-Embedding-4B
+uv run hf download Qwen/Qwen3-Embedding-0.6B
 uv run python manage.py ingest_sources --snapshot data/2026-11-21
 uv run python manage.py runserver
 ```
@@ -19,15 +19,17 @@ Otwórz http://127.0.0.1:8000/. Dla dołączonej migawki przykładowe twierdzeni
 
 Korpus możesz też zbudować przez `uv run python manage.py ingest_sources --sources sources.txt`. Podaj po jednym adresie statycznego dokumentu w wierszu. Komenda respektuje robots.txt i zgłasza błędy pobrania. Import migawki odczytuje istniejące lokalne rekordy, w tym dane z widoków dynamicznych. Powtórzenie importu aktualizuje dokumenty po URL i skrócie treści.
 
+Przy aktualizacji z 4B migracja zachowuje dokumenty i teksty fragmentów, a usuwa stare wektory. Po migracji i pobraniu modelu uruchom `uv run python manage.py reembed_chunks`, aby przeliczyć zapisane fragmenty bez ponownego pobierania źródeł. Wyszukiwanie uwzględnia fragmenty w miarę uzupełniania ich embeddingów.
+
 ## Konfiguracja modeli
 
 Domyślnie oba modele działają w procesie aplikacji i są ładowane przy pierwszym użyciu. Wymagają pamięci na oba zestawy wag. Na CPU czas odpowiedzi może być długi. Przy gotowym cache można ustawić HF_HUB_OFFLINE=1, a na CPU ograniczyć liczbę wątków przez OMP_NUM_THREADS.
 
 | Zmienna | Znaczenie |
 | --- | --- |
-| QWEN_EMBEDDING_PATH | Lokalizacja wag Qwen3-Embedding-4B lub domyślny identyfikator Hugging Face |
+| QWEN_EMBEDDING_PATH | Opcjonalna ścieżka do lokalnej kopii Qwen3-Embedding-0.6B (1024 wymiary). Domyślnie `Qwen/Qwen3-Embedding-0.6B` |
 | QWEN_DEVICE | Urządzenie embeddingów, np. cpu lub cuda |
-| RAG_TOP_K | Liczba fragmentów przekazywanych modelowi, domyślnie 5 |
+| RAG_TOP_K | Maksymalna liczba fragmentów do końcowej oceny, domyślnie 5. pgvector pobiera do trzech razy tyle kandydatów, maksymalnie 40 |
 | PRAWDOWID_LLM_DEVICE | Opcjonalne urządzenie oceny. Domyślny model używa CPU, jeśli GPU ma mniej niż 10 GiB wolnej pamięci |
 | PRAWDOWID_LLM_MODEL | Model oceniający, domyślnie Qwen/Qwen3.5-4B z lokalnego cache |
 | PRAWDOWID_LLM_URL | Opcjonalny pełny adres endpointu chat/completions. Po ustawieniu materiał i fragmenty są wysyłane do tego endpointu |
@@ -45,4 +47,4 @@ uv run python manage.py test
 
 Testy jednostkowe korzystają z atrap inferencji i połączeń sieciowych. Formularz przyjmuje do 12 000 znaków. Pobieranie URL obsługuje HTML i zwykły tekst. Gdy strona wymaga JavaScriptu lub artykuł jest zbyt długi, można wkleić fragment ręcznie. Materiał użytkownika służy wyłącznie bieżącej analizie.
 
-Aplikacja sprawdza identyfikatory i dosłowność cytatów. Interpretacja cytatu oraz przypisana klasa pozostają oceną modelu. Pusty korpus, błąd usługi lub niepoprawna odpowiedź powodują wyświetlenie przyczyny i wyniku „Niezweryfikowane”.
+Aplikacja sprawdza identyfikatory wybranych fragmentów i dosłowność cytatów. Dobór dowodów, interpretacja cytatu oraz przypisana klasa pozostają oceną modelu. Gdy selekcja zwróci pustą listę, końcowa ocena sprawdza najwyżej sklasyfikowane fragmenty z pgvector do limitu RAG_TOP_K. Wynik potwierdzający lub zaprzeczający wymaga cytatu z tych źródeł. Błąd usługi lub niepoprawna odpowiedź modelu daje wynik „Niezweryfikowane” z komunikatem o błędzie.

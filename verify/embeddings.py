@@ -4,7 +4,7 @@ from threading import Lock
 
 from .models import EMBEDDING_SIZE
 
-MODEL = "Qwen/Qwen3-Embedding-4B"
+MODEL = "Qwen/Qwen3-Embedding-0.6B"
 _MODEL_LOCK = Lock()
 
 

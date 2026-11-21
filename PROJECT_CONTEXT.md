@@ -8,7 +8,7 @@
 
 ## 2. Zakres MVP — ustalony w rozmowach
 
-1. **RAG**: pobranie treści wybranych stron rządowych, ekstrakcja tekstu, podział na fragmenty, embeddingi modelem **Qwen3-Embedding-4B**, indeks w **PostgreSQL + pgvector**, proste wyszukiwanie podobieństwa.
+1. **RAG**: pobranie treści wybranych stron rządowych, ekstrakcja tekstu, podział na fragmenty, embeddingi modelem **Qwen3-Embedding-0.6B**, indeks w **PostgreSQL + pgvector**, proste wyszukiwanie podobieństwa.
 2. **Aplikacja webowa**: jedna aplikacja **Django full-stack**, obsługa wejścia **tekstowego i URL**, wyświetlanie rezultatów i odnośników do źródeł.
 3. **Ocena modelowa**: wysłanie materiału od użytkownika oraz kontekstu wyszukanego przez RAG do **modelu bazowego/LLM**; otrzymanie klasy, szacunkowych wyników/prawdopodobieństw klas, argumentacji i dowodów dla wskazanej oceny.
 4. **Zabezpieczenia**: izolacja instrukcji od niezaufanych danych, blokowanie podstawowych ataków prompt injection, bezpieczna obsługa adresów URL.
@@ -24,7 +24,7 @@ Konfigurowana lista oficjalnych URL-i
     -> pobranie HTML / dostępnego tekstu
     -> ekstrakcja czytelnej treści + metadanych
     -> czyszczenie i podział na chunki
-    -> Qwen3-Embedding-4B: embedding każdego chunku
+    -> Qwen3-Embedding-0.6B: embedding każdego chunku
     -> PostgreSQL: dokumenty, chunki, wektory (pgvector)
 ```
 
@@ -114,7 +114,7 @@ PostgreSQL + pgvector
   `-- dokumenty, chunki i embeddingi
 
 Modele ML
-  |-- Qwen3-Embedding-4B: wektory
+  |-- Qwen3-Embedding-0.6B: wektory
   `-- model bazowy: analiza i klasyfikacja (konkretny model nieustalony)
 ```
 

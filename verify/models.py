@@ -1,7 +1,7 @@
 from django.db import models
 from pgvector.django import VectorField
 
-EMBEDDING_SIZE = 2560
+EMBEDDING_SIZE = 1024
 
 
 class Document(models.Model):
@@ -15,7 +15,7 @@ class Chunk(models.Model):
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="chunks")
     position = models.PositiveIntegerField()
     text = models.TextField()
-    embedding = VectorField(dimensions=EMBEDDING_SIZE)
+    embedding = VectorField(dimensions=EMBEDDING_SIZE, null=True)
 
     class Meta:
         constraints = [

@@ -47,23 +47,23 @@ class CorpusTests(SimpleTestCase):
     @patch("verify.retrieval.embed")
     @patch("verify.retrieval.Chunk.objects")
     def test_empty_corpus_skips_query_embedding(self, objects, embed):
-        objects.exists.return_value = False
+        objects.filter.return_value.exists.return_value = False
         self.assertEqual(retrieve("Treść"), [])
         embed.assert_not_called()
 
     @patch("verify.retrieval.embed", return_value=[[1.0, 0.0]])
     def test_retrieval_sql_orders_by_cosine_and_limits(self, embed):
-        from .models import Chunk
-
-        original = Chunk.objects.select_related
-        with patch.object(Chunk.objects, "exists", return_value=True), \
-             patch.object(Chunk.objects, "select_related", wraps=original), \
-             patch("django.db.models.query.QuerySet._fetch_all", autospec=True) as execute:
+        with (
+            patch.dict("os.environ", RAG_TOP_K="5"),
+            patch("django.db.models.query.QuerySet.exists", return_value=True),
+            patch("django.db.models.query.QuerySet._fetch_all", autospec=True) as execute,
+        ):
             def record(queryset):
                 self.assertIn("<=>", str(queryset.query))
                 self.assertIn("ORDER BY", str(queryset.query))
-                self.assertTrue(queryset.query.is_sliced)
+                self.assertIn('"embedding" IS NOT NULL', str(queryset.query))
+                self.assertEqual(queryset.query.high_mark, 15)
                 queryset._result_cache = []
             execute.side_effect = record
-            retrieve("Treść")
+            self.assertEqual(retrieve("Treść"), [])
         embed.assert_called_once_with(["Treść"], query=True)
