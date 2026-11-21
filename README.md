@@ -67,3 +67,9 @@ uv run python manage.py verify_claim --url "https://example.org/artykul"
 ```
 
 Komenda zwraca wynik w JSON-ie i wywołuje tę samą usługę `verify(...)` co formularz WWW. Usługa przyjmuje opcjonalne adaptery `complete(system_prompt, data)` i `search(text, limit)`. Domyślny adapter modelu korzysta z konfiguracji opisanej wyżej, a domyślny adapter wyszukiwania zwraca uporządkowane fragmenty z pgvector wraz z metadanymi źródeł.
+
+## Aktualność źródeł
+
+Uruchom `uv run python manage.py migrate`, a następnie ponów import migawki lub skonfigurowanych stron, aby uzupełnić metadane istniejących dokumentów. Datę publikacji zapisujemy wtedy, gdy pochodzi z migawki lub jawnych metadanych HTML. Czas pobrania jest przechowywany w dotychczasowym polu bazy `fetched_at` i jest dostępny jako `retrieved_at` w wyniku weryfikacji. Zgrupowane rekordy migawki mają metadane wspólne dla całego dokumentu, jeśli rekordy są zgodne. Daty przypisane do poszczególnych rekordów pozostają również w ich treści.
+
+Wśród wyników pgvector pierwszeństwo mają źródła pasujące do okresu tezy. Przedziały ważności poza tym okresem są odrzucane. Dla pytań o stan bieżący bez przedziału ważności wymagamy publikacji lub początku ważności z bieżącego dnia i model nadal ocenia treść. Rozpoznawanie okresu w kodzie obejmuje typowe daty, lata i proste określenia względne. Pozostałe sformułowania interpretuje model. Daty bez strefy czasowej z polskiej migawki są interpretowane w strefie `Europe/Warsaw`.

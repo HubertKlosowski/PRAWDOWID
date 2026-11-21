@@ -3,9 +3,12 @@
 import logging
 import os
 
+from django.utils import timezone
+
 from .analysis import assess, select_relevant, unresolved
 from .fetch import SourceUnavailable, fetch
 from .retrieval import search as search_corpus
+from .temporal import ARCHIVE_WARNING, PERIOD_MISMATCH, archived, claim_period, period_fit
 
 MAX_MATERIAL_LENGTH = 12000
 logger = logging.getLogger(__name__)
@@ -39,11 +42,20 @@ def verify(material, *, mode="text", complete=None, search=None):
         if len(material) > MAX_MATERIAL_LENGTH:
             return unresolved("abstained", "Artykuł przekracza limit. Wklej fragment do sprawdzenia.")
 
+    now = timezone.localtime()
+    period = claim_period(material, now)
     search = search_corpus if search is None else search
     try:
         limit = max(1, min(30, int(os.getenv("RAG_TOP_K", "5"))))
         candidates = search(material, min(40, limit * 3))
-        selected = select_relevant(material, candidates, limit, complete=complete)
+        ranked = sorted(((period_fit(chunk, period), chunk) for chunk in candidates), key=lambda item: item[0])
+        eligible = [chunk for fit, chunk in ranked if fit < 2]
+        if candidates and not eligible:
+            result = unresolved("abstained", PERIOD_MISMATCH)
+            if any(archived(chunk, now, period) for chunk in candidates):
+                result["limitations"] = [ARCHIVE_WARNING]
+            return result
+        selected = select_relevant(material, eligible, limit, complete=complete, period=period)
     except Exception as exc:
         logger.warning("Verification retrieval unavailable (%s)", type(exc).__name__)
         return unresolved(
@@ -52,4 +64,7 @@ def verify(material, *, mode="text", complete=None, search=None):
         )
 
     # Assess the nearest matches when selection may have missed relevant evidence.
-    return assess(material, selected or candidates[:limit], complete=complete)
+    result = assess(material, selected or eligible[:limit], complete=complete, period=period)
+    if any(archived(item, now, period) for item in result["evidence"]):
+        result["limitations"] = [ARCHIVE_WARNING]
+    return result

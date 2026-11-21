@@ -25,6 +25,7 @@
     <p>Szacunki są nieskalibrowane. Wiarygodność twierdzenia oceń na podstawie dowodów.</p>
     <ul>{% for label,score in result.class_scores.items %}<li>{{ label|lower|capfirst }} <strong>{{ score|floatformat:2 }}</strong></li>{% endfor %}</ul>
   {% endif %}
+  {% for warning in result.limitations %}<p><strong>Aktualność.</strong> {{ warning }}</p>{% endfor %}
   {% if result.evidence %}
     <h4 id="dowody">Dowody ze źródeł</h4>
     {% for e in result.evidence %}
@@ -32,7 +33,7 @@
         <strong>{% if e.relation == 'supports' %}Za{% elif e.relation == 'contradicts' %}Przeciw{% else %}Kontekst{% endif %}</strong>
         <blockquote>{{ e.quote }}</blockquote>
         <a href="{{ e.url }}" rel="noopener noreferrer">{{ e.title }}</a>
-        <p>Dokument {{ e.document_id }}, fragment {{ e.position|add:1 }}. Pobrano {{ e.fetched_at }}.</p>
+        <p>Dokument {{ e.document_id }}, fragment {{ e.position|add:1 }}. Data publikacji {{ e.published_at|default:"nieznana" }}. Pobrano {{ e.retrieved_at }}.</p>
       </article>
     {% endfor %}
   {% endif %}

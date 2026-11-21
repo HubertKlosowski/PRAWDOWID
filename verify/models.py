@@ -8,6 +8,9 @@ class Document(models.Model):
     url = models.URLField(max_length=2048, unique=True)
     title = models.TextField()
     fetched_at = models.DateTimeField()
+    published_at = models.DateField(null=True, blank=True)
+    valid_from = models.DateTimeField(null=True, blank=True)
+    valid_to = models.DateTimeField(null=True, blank=True)
     content_hash = models.CharField(max_length=64)
 
 

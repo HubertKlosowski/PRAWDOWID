@@ -25,7 +25,8 @@ class Command(BaseCommand):
             rows = self.fetch_sources(options["sources"])
         count = 0
         for row in rows:
-            index_document(*row)
+            url, title, text, retrieved_at, dates = row
+            index_document(url, title, text, retrieved_at, **dates)
             count += 1
         self.stdout.write(f"Przetworzono dokumentów: {count}.")
 
@@ -36,12 +37,12 @@ class Command(BaseCommand):
             if not url or url.startswith("#"):
                 continue
             try:
-                final_url, title, text = fetch(url, allowed_hosts={urlsplit(url).hostname})
+                final_url, title, text, dates = fetch(url, allowed_hosts={urlsplit(url).hostname}, with_dates=True)
             except ValueError as exc:
                 failed += 1
                 self.stderr.write(f"{url}: {exc}")
             else:
-                yield final_url, title, text, timezone.now()
+                yield final_url, title, text, timezone.now(), dates
             sleep(1)
         if failed:
             raise CommandError(f"Liczba niedostępnych stron: {failed}.")

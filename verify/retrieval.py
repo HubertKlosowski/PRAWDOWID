@@ -2,6 +2,7 @@ from pgvector.django import CosineDistance
 
 from .embeddings import embed
 from .models import Chunk
+from .temporal import DATE_FIELDS
 
 
 def search(text, limit):
@@ -15,6 +16,9 @@ def search(text, limit):
     return [
         {"id": str(row.pk), "document_id": row.document_id, "position": row.position,
          "text": row.text, "title": row.document.title,
-         "url": row.document.url, "fetched_at": row.document.fetched_at.isoformat()}
+         "url": row.document.url, "fetched_at": row.document.fetched_at.isoformat(),
+         "retrieved_at": row.document.fetched_at.isoformat(),
+         **{field: value.isoformat() if (value := getattr(row.document, field)) else None
+            for field in DATE_FIELDS}}
         for row in rows
     ]

@@ -12,6 +12,9 @@ from urllib.robotparser import RobotFileParser
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 
+from .temporal import source_date
+
+
 MAX_BYTES = 2_000_000
 TIMEOUT = 12
 REDIRECTS = {301, 302, 303, 307, 308}
@@ -28,6 +31,7 @@ class ArticleParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.stack = []
+        self.published_at = None
         self.parts = {key: [] for key in ("title", "article", "main", "body")}
 
     def add(self, value):
@@ -42,10 +46,16 @@ class ArticleParser(HTMLParser):
                 self.parts[tag].append(value)
 
     def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "meta" and self.published_at is None:
+            key = attrs.get("property") or attrs.get("name") or attrs.get("itemprop") or ""
+            if key.casefold() in {"article:published_time", "datepublished", "dc.date.issued"}:
+                self.published_at = source_date(attrs.get("content"))
+        if tag == "time" and self.published_at is None and attrs.get("itemprop") == "datePublished":
+            self.published_at = source_date(attrs.get("datetime"))
         if tag in BLOCK:
             self.add("\n")
         if tag not in VOID:
-            attrs = dict(attrs)
             if len(self.stack) >= 128:
                 raise SourceUnavailable("Zbyt głęboka struktura strony.")
             self.stack.append((tag, "hidden" in attrs or attrs.get("aria-hidden") == "true"))
@@ -61,13 +71,14 @@ class ArticleParser(HTMLParser):
     handle_data = add
 
 
-def extract(body, mime, charset, fallback_title):
+def extract(body, mime, charset, fallback_title, *, with_dates=False):
     try:
         decoder = codecs.lookup(charset or "utf-8")
         content = body.decode(decoder.name, errors="replace")
     except (LookupError, UnicodeError) as exc:
         raise SourceUnavailable("Nieobsługiwane kodowanie strony.") from exc
     title = fallback_title
+    published_at = None
     if mime != "text/plain":
         parser = ArticleParser()
         try:
@@ -75,6 +86,7 @@ def extract(body, mime, charset, fallback_title):
             parser.close()
         except AssertionError as exc:
             raise SourceUnavailable("Nie udało się odczytać struktury HTML.") from exc
+        published_at = parser.published_at
         title = " ".join("".join(parser.parts["title"]).split()) or title
         content = ""
         for tag in ("main", "article", "body"):
@@ -84,6 +96,8 @@ def extract(body, mime, charset, fallback_title):
     text = "\n".join(line for raw in content.splitlines() if (line := " ".join(raw.split())))
     if not text:
         raise SourceUnavailable("Strona nie zawiera dostępnego tekstu.")
+    if with_dates:
+        return title[:500], text, {"published_at": published_at}
     return title[:500], text
 
 
@@ -130,7 +144,7 @@ def _interrupt_read(sock):
         sock.shutdown(socket.SHUT_RDWR)
 
 
-def _request(url, host, port, record, deadline, *, robots=False):
+def _request(url, host, port, record, deadline, *, robots=False, with_dates=False):
     parts = urlsplit(url)
     family, kind, proto, _, address = record
     # Connect only to the resolved, validated sockaddr. TLS still verifies the hostname.
@@ -173,12 +187,12 @@ def _request(url, host, port, record, deadline, *, robots=False):
                     if not chunk:
                         if robots:
                             return None, body.decode("utf-8-sig", errors="replace")
-                        return None, extract(body, mime, response.headers.get_content_charset(), host)
+                        return None, extract(body, mime, response.headers.get_content_charset(), host, with_dates=with_dates)
                     body.extend(chunk)
                 raise SourceUnavailable("Strona przekracza limit rozmiaru.")
 
 
-def fetch(url, *, allowed_hosts=None):
+def fetch(url, *, allowed_hosts=None, with_dates=False):
     """Fetch a readable public page, validating every hop before opening a socket."""
     deadline = time.monotonic() + TIMEOUT
     try:
@@ -197,7 +211,8 @@ def fetch(url, *, allowed_hosts=None):
                 if delay >= _remaining(deadline):
                     raise ValueError("Opóźnienie robots.txt przekracza budżet pobrania.")
                 time.sleep(delay)
-            location, result = _request(url, host, port, record, deadline)
+            options = {"with_dates": True} if with_dates else {}
+            location, result = _request(url, host, port, record, deadline, **options)
             if result is not None:
                 return url, *result
             url = urljoin(url, location)

@@ -84,6 +84,7 @@ class VerificationPageTests(SimpleTestCase):
             url="https://example.org/source",
             title="Komunikat",
             fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            published_at=None, valid_from=None, valid_to=None,
         )
         texts = ["Fragment na podobny temat.", "Dowód za.", "Dowód przeciw."]
         rows = [
@@ -152,6 +153,7 @@ class VerificationPageTests(SimpleTestCase):
         self.assertContains(recovered, 'data-status="resolved"')
         self.assertContains(recovered, f'<a href="{document.url}" rel="noopener noreferrer">{document.title}</a>', html=True)
         self.assertContains(recovered, "Dokument 10, fragment 2.")
+        self.assertContains(recovered, "Data publikacji nieznana.")
         self.assertContains(recovered, "Szacunki są nieskalibrowane.")
         self.assertContains(recovered, "Dowód za.")
         self.assertContains(unverified, "<h3>Brak rozstrzygnięcia</h3>", html=True)

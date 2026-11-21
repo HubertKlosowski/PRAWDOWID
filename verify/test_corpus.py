@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -43,6 +43,7 @@ class CorpusTests(SimpleTestCase):
         self.assertIn("2026-01-10", first[2])
         self.assertIn("Stan wody: 48", second[2])
         self.assertEqual(first[3], now)
+        self.assertEqual(first[4]["published_at"], date(2026, 1, 10))
 
     @patch("verify.retrieval.embed")
     @patch("verify.retrieval.Chunk.objects")
