@@ -25,6 +25,10 @@ Przy aktualizacji z 4B migracja zachowuje dokumenty i teksty fragmentów, a usuw
 
 Domyślnie oba modele działają w procesie aplikacji i są ładowane przy pierwszym użyciu. Wymagają pamięci na oba zestawy wag. Na CPU czas odpowiedzi może być długi. Przy gotowym cache można ustawić HF_HUB_OFFLINE=1, a na CPU ograniczyć liczbę wątków przez OMP_NUM_THREADS.
 
+Do pokazu użyj `./run-demo.sh`. Skrypt uruchamia `manage.py serve_demo --noreload`, który ładuje modele raz, przed przyjęciem pierwszego żądania. Jeśli skonfigurowano endpoint oceniający przez `PRAWDOWID_LLM_URL`, serwer ładuje lokalnie tylko model embeddingowy. Możesz wymusić pracę na CPU poleceniem `QWEN_DEVICE=cpu PRAWDOWID_LLM_DEVICE=cpu ./run-demo.sh`.
+
+Na CPU z AVX-512 BF16 i obsługą oneDNN lokalny Qwen3.5 z wagami BF16 przygotowuje wagi warstw liniowych dekodera podczas ładowania. Kolejne kroki generowania korzystają z gotowego układu wag. Aby porównać czasy na własnym procesorze, uruchom osobny proces z `PRAWDOWID_CPU_PREPACK=0` i sprawdź te same pytania po załadowaniu modelu.
+
 Na Linux x86-64 z kartą NVIDIA uruchom Qwen3.5 z opcjonalnymi kernelami CUDA. Pakiet `causal-conv1d` jest skompilowany dla wersji PyTorch 2.11 i CUDA 12.8 używanych przez projekt.
 
 ```bash
@@ -58,6 +62,12 @@ Testy jednostkowe korzystają z atrap inferencji i połączeń sieciowych. Formu
 Aplikacja zwraca `resolved` z werdyktem i klikalnymi cytatami albo jeden ze statusów bez werdyktu. `abstained` oznacza niewystarczające lub sprzeczne dowody albo niedostępny materiał. `needs_clarification` prosi o doprecyzowanie tezy. `out_of_scope` dotyczy zadań innych niż sprawdzanie twierdzeń faktograficznych. `technical_error` oznacza awarię wyszukiwania lub brak poprawnej odpowiedzi modelu.
 
 Model wybiera identyfikatory gotowych cytatów. Druga ocena sprawdza ich związek z całą tezą bez dostępu do proponowanego werdyktu. Rozstrzygnięcie wymaga zgodności obu ocen. Przy sprzecznych relacjach aplikacja wstrzymuje rozstrzygnięcie. Cytaty, ich metadane i tekst objaśnienia pochodzą z aplikacji. Ocena związku cytatu z tezą zależy od modelu. Po pustej selekcji fragmentów ocena korzysta z najbliższych wyników pgvector, do limitu RAG_TOP_K.
+
+## Google Fact Check Tools API
+
+Integracja jest opcjonalna. Ustaw `GOOGLE_FACTCHECK_API_KEY` w środowisku procesu lub w lokalnym `.env`. Skrypt `run-demo.sh` korzysta z `.env`, jeśli plik istnieje. Przy ręcznym uruchomieniu serwera lub komendy dodaj `uv run --env-file .env`.
+
+Po włączeniu integracji aplikacja wysyła do Google do trzech krótkich fragmentów zgłoszenia zawierających twierdzenia. Polskie zapytania używają filtra `pl`, a dla nierozpoznanego języka filtr jest pomijany. Wyniki są filtrowane według zgodności twierdzeń, trafiają do Qwen obok cytatów z pgvector i mogą pojawić się z oryginalną oceną wydawcy, datą oraz linkiem. API dostarcza metadane artykułów. Jednoznaczny werdykt nadal wymaga cytatów z korpusu, które przejdą kontrolę dowodów. Przy awarii wyszukiwania Google aplikacja informuje o niedostępności i kontynuuje weryfikację za pomocą korpusu.
 
 ## Weryfikacja z terminala
 

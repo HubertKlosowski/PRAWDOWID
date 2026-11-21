@@ -8,24 +8,66 @@
 <fieldset><legend>Rodzaj materiału</legend><label><input type="radio" name="mode" value="text" {% if form.mode.value != "url" %}checked{% endif %}> Tekst</label><label><input type="radio" name="mode" value="url" {% if form.mode.value == "url" %}checked{% endif %}> Adres URL</label></fieldset>
 <label for="material" id="prompt">Treść lub adres artykułu</label>
 <textarea required maxlength="12000" rows="6" id="material" name="material">{{ form.material.value|default:'' }}</textarea>
-{{ form.errors }}<button type="submit">Sprawdź informację</button><span id="progress" role="status"></span></form></section>
-<aside><h2>Jak odczytać wynik?</h2><dl><dt>Potwierdzone</dt><dd>Przytoczone źródła wspierają twierdzenie.</dd><dt>Zaprzeczone</dt><dd>Źródła zawierają dowody przeciwko twierdzeniu.</dd><dt>Brak rozstrzygnięcia</dt><dd>Dowody nie pozwalają rozstrzygnąć twierdzenia.</dd></dl></aside></div>
+{{ form.errors }}
+<button type="submit">Sprawdź informację</button>
+</form>
+<div id="progress" class="progress" hidden>
+  <div class="progress-heading">
+    <span class="spinner" aria-hidden="true"></span>
+    <strong>Trwa weryfikacja</strong>
+  </div>
+  <div class="progress-track" aria-hidden="true"></div>
+  <p class="progress-caption">Jak przebiega weryfikacja</p>
+  <ul>
+    <li id="progress-url" hidden>Aplikacja pobiera tekst ze wskazanej strony.</li>
+    <li>Jeśli włączono Google Fact Check, aplikacja szuka też wcześniejszych weryfikacji.</li>
+    <li>Aplikacja wyszukuje podobne fragmenty w korpusie oficjalnych źródeł, a model wybiera te istotne dla twierdzenia.</li>
+    <li>Model sprawdza, czy cytaty wspierają lub podważają twierdzenie. Gdy dowody nie wystarczają, zgłasza brak rozstrzygnięcia.</li>
+  </ul>
+</div>
+<div id="verification-status" class="visually-hidden" role="status"></div>
+</section>
+<details class="result-guide">
+  <summary>Jak odczytać wynik?</summary>
+  <div class="result-guide-content">
+    <dl>
+      <dt>Potwierdzone</dt>
+      <dd>Cytaty ze źródeł bezpośrednio wspierają twierdzenie.</dd>
+      <dt>Zaprzeczone</dt>
+      <dd>Cytaty ze źródeł bezpośrednio podważają twierdzenie.</dd>
+      <dt>Brak rozstrzygnięcia</dt>
+      <dd>Dowodów brakuje, są niewystarczające lub sprzeczne. Ten wynik może się też pojawić, gdy artykuł jest niedostępny lub zbyt długi.</dd>
+      <dt>Doprecyzuj zgłoszenie</dt>
+      <dd>Podaj informację lub pytanie, które chcesz sprawdzić. Jeśli odwołujesz się do innej treści, dołącz ją do zgłoszenia.</dd>
+      <dt>Poza zakresem weryfikacji</dt>
+      <dd>Zgłoszenie dotyczy innego zadania, np. napisania tekstu lub wyrażenia opinii.</dd>
+      <dt>Błąd techniczny</dt>
+      <dd>Wyszukiwanie źródeł lub ocena modelu się nie powiodły. Spróbuj ponownie później.</dd>
+    </dl>
+    <p>Przy wydanym werdykcie zobaczysz też szacunek dla klasy „Niezweryfikowane”, czyli ocenę modelu dla braku rozstrzygnięcia.</p>
+  </div>
+</details>
 {% if result %}
-<section class="card result" id="wynik" tabindex="-1" data-status="{{ result.status }}">
+<section class="card result" id="wynik" tabindex="-1" data-status="{{ result.status }}"{% if result.status == "resolved" %} data-verdict="{{ result.verdict }}"{% endif %}>
   <h2>Wynik weryfikacji</h2>
-  {% if result.status == "resolved" %}
-    <h3>{% if result.verdict == "true" %}Potwierdzone{% else %}Zaprzeczone{% endif %}</h3>
-    <p>{{ result.explanation }} <a href="#dowody">Zobacz dowody</a>.</p>
-  {% else %}
-    <h3>{% if result.status == "needs_clarification" %}Doprecyzuj zgłoszenie{% elif result.status == "out_of_scope" %}Poza zakresem weryfikacji{% elif result.status == "technical_error" %}Błąd techniczny{% else %}Brak rozstrzygnięcia{% endif %}</h3>
-    <p>{{ result.explanation }}</p>
-  {% endif %}
+  <div class="result-summary">
+    {% if result.status == "resolved" %}
+      <h3>{% if result.verdict == "true" %}Potwierdzone{% else %}Zaprzeczone{% endif %}</h3>
+      <p>{{ result.explanation }} <a href="#dowody">Zobacz dowody</a>.</p>
+    {% else %}
+      <h3>{% if result.status == "needs_clarification" %}Doprecyzuj zgłoszenie{% elif result.status == "out_of_scope" %}Poza zakresem weryfikacji{% elif result.status == "technical_error" %}Błąd techniczny{% else %}Brak rozstrzygnięcia{% endif %}</h3>
+      <p>{{ result.explanation }}</p>
+    {% endif %}
+  </div>
   {% if result.class_scores %}
     <h4>Szacunki modelu dla klas</h4>
     <p>Szacunki są nieskalibrowane. Wiarygodność twierdzenia oceń na podstawie dowodów.</p>
     <ul>{% for label,score in result.class_scores.items %}<li>{{ label|lower|capfirst }} <strong>{{ score|floatformat:2 }}</strong></li>{% endfor %}</ul>
   {% endif %}
   {% for warning in result.limitations %}<p><strong>Aktualność.</strong> {{ warning }}</p>{% endfor %}
+  {% if result.google_fact_check_unavailable %}
+    <p>Wyszukiwanie w Google Fact Check jest chwilowo niedostępne lub niepełne.</p>
+  {% endif %}
   {% if result.evidence %}
     <h4 id="dowody">Dowody ze źródeł</h4>
     {% for e in result.evidence %}
@@ -37,6 +79,23 @@
       </article>
     {% endfor %}
   {% endif %}
+  {% if result.fact_checks %}
+    <h4>Powiązane weryfikacje znalezione przez Google Fact Check</h4>
+    <p>Oceny pochodzą od wydawców. Pełne uzasadnienia są dostępne w ich artykułach.</p>
+    {% for review in result.fact_checks %}
+      <article>
+        <a href="{{ review.source_url }}" rel="noopener noreferrer">{{ review.review_title|default:review.source_url }}</a>
+        <p><strong>{{ review.publisher|default:review.publisher_site|default:"Wydawca" }}</strong> · Ocena {{ review.rating }}
+          {% if review.review_date %} · Data weryfikacji {{ review.review_date }}{% endif %}
+          {% if review.cited %} · Wykorzystano w ocenie modelu{% endif %}</p>
+        <blockquote>{{ review.claim }}</blockquote>
+        {% if review.claimant or review.claim_date %}
+          <p>{% if review.claimant %}Autor wypowiedzi {{ review.claimant }}{% endif %}
+          {% if review.claim_date %} · Data wypowiedzi {{ review.claim_date }}{% endif %}</p>
+        {% endif %}
+      </article>
+    {% endfor %}
+  {% endif %}
 </section>
-{% endif %}</main>
+{% endif %}</div></main>
 <script src="{% static 'verify/form.js' %}"></script></body></html>

@@ -8,16 +8,17 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
-class _NoRedirect(HTTPRedirectHandler):
+class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args):
         return None
 
 
 _local_lock = Lock()
+DEFAULT_LLM_MODEL = "Qwen/Qwen3.5-4B"
 
 
 @lru_cache(maxsize=1)
-def _load_local(name):
+def load_local_model(name):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -30,14 +31,19 @@ def _load_local(name):
     model = AutoModelForCausalLM.from_pretrained(
         name, local_files_only=True, dtype="auto"
     )
-    return tokenizer, model.to(device).eval()
+    model = model.to(device)
+    if model.device.type == "cpu" and os.getenv("PRAWDOWID_CPU_PREPACK", "1") == "1":
+        from .cpu_inference import prepare_cpu_decoder
+
+        prepare_cpu_decoder(model)
+    return tokenizer, model.eval()
 
 
 def _local_completion(name, messages):
     import torch
 
     with _local_lock, torch.inference_mode():
-        tokenizer, model = _load_local(name)
+        tokenizer, model = load_local_model(name)
         inputs = tokenizer.apply_chat_template(
             messages,
             tokenize=True,
@@ -53,10 +59,11 @@ def _local_completion(name, messages):
 
 def request_completion(system_prompt, data):
     url = os.environ.get("PRAWDOWID_LLM_URL", "")
-    model = os.environ.get("PRAWDOWID_LLM_MODEL", "Qwen/Qwen3.5-4B")
+    model = os.environ.get("PRAWDOWID_LLM_MODEL", DEFAULT_LLM_MODEL)
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": json.dumps(data, ensure_ascii=False)},
+        # Keep literal Qwen chat markers in untrusted values from becoming tokens.
+        {"role": "user", "content": json.dumps(data, ensure_ascii=False).replace("<", r"\u003c")},
     ]
     if url:
         return _remote_completion(url, model, messages)
@@ -71,7 +78,7 @@ def _remote_completion(url, model, messages):
     if key := os.environ.get("PRAWDOWID_LLM_API_KEY"):
         headers["Authorization"] = f"Bearer {key}"
     request = Request(url, data=json.dumps(body).encode(), headers=headers)
-    with build_opener(_NoRedirect()).open(request, timeout=60) as response:
+    with build_opener(NoRedirect()).open(request, timeout=60) as response:
         payload = response.read(131073)
     if len(payload) > 131072:
         raise ValueError("Za duża odpowiedź modelu.")

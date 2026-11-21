@@ -10,6 +10,7 @@ from .fetch import SourceUnavailable
 ABSTENTION = {"status": "abstained", "label": None, "class_scores": None, "quote_ids": []}
 
 
+@patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="")
 class VerificationPageTests(SimpleTestCase):
     def test_form_available(self):
         response = self.client.get("/")

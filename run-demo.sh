@@ -25,6 +25,8 @@ fi
 psql -X -v ON_ERROR_STOP=1 -c 'SELECT count(*) AS fragmenty FROM verify_chunk;'
 uv sync
 uv run python manage.py migrate
-uv run hf download Qwen/Qwen3-Embedding-0.6B
-uv run hf download Qwen/Qwen3.5-4B
-exec uv run python manage.py runserver 127.0.0.1:8000
+env_file=()
+if [[ -f .env ]]; then
+    env_file=(--env-file .env)
+fi
+exec uv run "${env_file[@]}" python manage.py serve_demo --noreload 127.0.0.1:8000

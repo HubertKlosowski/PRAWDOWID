@@ -21,6 +21,7 @@ OLD = {
 }
 
 
+@patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="")
 class TemporalVerificationTests(SimpleTestCase):
     @patch("verify.verification.timezone.localtime", return_value=NOW)
     def test_recent_retrieval_does_not_make_expired_alert_current(self, clock):
