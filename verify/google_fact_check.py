@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from http.client import HTTPException
+from unicodedata import category, normalize
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, build_opener
@@ -22,6 +23,27 @@ TIMEOUT = 4
 validate_url = URLValidator(schemes=["http", "https"])
 POLISH_QUESTION = re.compile(r"czy ([^.!?]+)\?", re.IGNORECASE)
 RECENT_EVENT_PHRASE = re.compile(r"\b(?:ostatnio|niedawno) odby(?:wa)?(?:ł|ła|ło|li|ły) się\b", re.IGNORECASE)
+PROTECTED_QUERY_PART = re.compile(
+    r"(https?://\S+|\[(?:EMAIL|IDENTYFIKATOR|PESEL|TELEFON|URL)\])", re.IGNORECASE
+)
+POLISH_WORD = re.compile(r"\b[^\W\d_]+\b")
+# W przyszłości można dodać spaCy.
+# Correct known forms only. Approximate matching across arbitrary words can change a claim.
+POLISH_TYPOS = {
+    "bezpłatene": "bezpłatne",
+    "komunkacja": "komunikacja",
+    "komunkację": "komunikację",
+    "ostrzęzenia": "ostrzeżenia",
+    "ostrzżenia": "ostrzeżenia",
+    "reginalny": "regionalny",
+    "szczepiena": "szczepienia",
+    "wroclaw": "wrocław",
+    "wroclawia": "wrocławia",
+    "wroclawiu": "wrocławiu",
+    "wrocłwa": "wrocław",
+    "wrocłwaiu": "wrocławiu",
+    "wydtaki": "wydatki",
+}
 
 
 class FactCheckUnavailable(RuntimeError):
@@ -130,8 +152,49 @@ def search_query(text, language_code):
     return keywords if " " in keywords else text
 
 
+def _correct_polish_word(match):
+    word = match[0]
+    corrected = POLISH_TYPOS.get(word.lower())
+    if not corrected:
+        return word
+    if word.isupper():
+        return corrected.upper()
+    if word.istitle():
+        return corrected.capitalize()
+    return corrected if word.islower() else word
+
+
+def _is_meaningful_punctuation(char, before, after):
+    if char in ".,:/–—" and before.isdecimal() and after.isdecimal():
+        return True  # Decimal separators, dates, times and numeric ranges.
+    if char == "-" and after.isdecimal():
+        return True  # A minus sign or a separator in a date.
+    if char in "-'’" and before.isalnum() and after.isalnum():
+        return True  # Names and identifiers such as Bielsko-Biała and COVID-19.
+    return char in "%‰"
+
+
+def _normalize_query(query, language_code):
+    parts = PROTECTED_QUERY_PART.split(normalize("NFC", mask_text(query)))
+    for index in range(0, len(parts), 2):
+        part = parts[index]
+        if language_code == "pl":
+            part = POLISH_WORD.sub(_correct_polish_word, part)
+        padded = f" {part} "
+        parts[index] = "".join(
+            char if not category(char).startswith("P")
+            or _is_meaningful_punctuation(char, padded[pos - 1], padded[pos + 1])
+            else " "
+            for pos, char in enumerate(padded[1:-1], start=1)
+        )
+    return " ".join("".join(parts).split())
+
+
 def search(query, *, api_key, language_code="pl"):
-    params = {"key": api_key, "query": mask_text(query), "pageSize": PAGE_SIZE}
+    query = _normalize_query(query, language_code)
+    if not query:
+        return []
+    params = {"key": api_key, "query": query, "pageSize": PAGE_SIZE}
     if language_code:
         params["languageCode"] = language_code
     try:

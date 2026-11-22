@@ -100,7 +100,7 @@ class GoogleFactCheckClientTests(SimpleTestCase):
         self.assertEqual(request.get_method(), "GET")
         self.assertEqual(request.full_url.split("?")[0], ENDPOINT)
         self.assertEqual(parse_qs(urlsplit(request.full_url).query), {
-            "key": [API_KEY], "query": [CLAIM], "languageCode": ["pl"], "pageSize": ["10"],
+            "key": [API_KEY], "query": [CLAIM.rstrip("?")], "languageCode": ["pl"], "pageSize": ["10"],
         })
         self.assertEqual([(item.publisher, item.rating) for item in found], [
             ("Redakcja A", "Prawda"), ("Redakcja B", "Fałsz"),
@@ -123,6 +123,22 @@ class GoogleFactCheckClientTests(SimpleTestCase):
             found = search(CLAIM, api_key=API_KEY, language_code=None)
         self.assertEqual(len(found), MAX_REVIEWS_PER_QUERY)
         self.assertNotIn("languageCode", parse_qs(urlsplit(opener.open.call_args.args[0].full_url).query))
+
+    def test_normalizes_polish_typos_and_punctuation_without_changing_values(self):
+        typo = "WROCŁWA, 12.05.2026: wydtaki na „komunkację” nie wzrosły o 3,5% (godz. 18:00)!"
+        expected = "WROCŁAW 12.05.2026 wydatki na komunikację nie wzrosły o 3,5% godz 18:00"
+        opener = mock_opener({})
+        with patch("verify.google_fact_check.build_opener", return_value=opener):
+            search(typo, api_key=API_KEY)
+            search(expected, api_key=API_KEY)
+        for call in opener.open.call_args_list:
+            query = parse_qs(urlsplit(call.args[0].full_url).query)
+            self.assertEqual(query["query"], [expected])
+
+    def test_empty_normalized_query_skips_http(self):
+        with patch("verify.google_fact_check.build_opener") as opener:
+            self.assertEqual(search(" ? ! … ", api_key=API_KEY), [])
+        opener.assert_not_called()
 
     def test_rejects_a_response_echoing_the_key(self):
         opener = mock_opener({"claims": [{**MATCH_RECORD, "claimant": API_KEY}]})
@@ -211,7 +227,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
 
         fetch.assert_called_once_with(url)
         requests = [parse_qs(urlsplit(call.args[0].full_url).query) for call in google.open.call_args_list]
-        self.assertEqual([params["query"] for params in requests], [[query] for query in queries])
+        self.assertEqual([params["query"] for params in requests], [[query.rstrip(".")] for query in queries])
         self.assertEqual([params["languageCode"] for params in requests], [["pl"], ["en"], ["pl"]])
         self.assertEqual(corpus.call_args.args[0], article)
         self.assertEqual(result["status"], "resolved")
@@ -369,7 +385,9 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
             result = verify(material, search=lambda *args: [RAG_CHUNK], complete=complete)
 
         query = parse_qs(urlsplit(google.open.call_args.args[0].full_url).query)
-        self.assertEqual(query["query"], [material])
+        self.assertEqual(query["query"], [
+            "Czy Wrocław wydaje na komunikację około 700 mln zł Dlaczego w analizie Demagoga jest 650 mln zł",
+        ])
         self.assertEqual(result["status"], "abstained")
         self.assertNotIn("google_fact_check_unavailable", result)
 

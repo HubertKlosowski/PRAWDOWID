@@ -46,7 +46,8 @@ class MaskingTests(SimpleTestCase):
         with patch("verify.google_fact_check.build_opener", return_value=opener):
             google_fact_check.search(MATERIAL, api_key="test-key")
         request = opener.open.call_args.args[0]
-        self.assertEqual(parse_qs(urlsplit(request.full_url).query)["query"], [MASKED])
+        self.assertEqual(parse_qs(urlsplit(request.full_url).query)["query"],
+                         ["Kontakt [EMAIL] [TELEFON] PESEL [IDENTYFIKATOR]"])
 
     @patch.dict("os.environ", PRAWDOWID_LLM_URL="https://provider.example.org/chat", GOOGLE_FACTCHECK_API_KEY="")
     def test_verbatim_extraction_accepts_masked_material_with_remote_model(self):
