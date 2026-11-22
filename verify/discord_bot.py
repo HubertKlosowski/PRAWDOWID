@@ -8,7 +8,11 @@ import discord
 from discord import app_commands
 from django.db import DatabaseError, connections
 
-from .audit import delete_session, discord_session_key
+from .audit import active_session_runs, delete_session, discord_session_key
+from .history_export import (
+    EXPORT_ANSWER_FILENAME, EXPORT_HISTORY_FILENAME, EXPORT_UNAVAILABLE, NO_ANSWER, NO_HISTORY,
+    ExportTooLarge, build_export,
+)
 from .security import enforce_limit, limit_message
 from .verification import InvalidMaterial, material_mode, verify
 
@@ -97,6 +101,14 @@ def delete_discord_history(session_key):
         connections.close_all()
 
 
+def export_discord_data(session_key, latest_only, max_bytes):
+    try:
+        runs = active_session_runs(session_key, "discord")
+        return build_export(runs, latest_only=latest_only, max_bytes=max_bytes)
+    finally:
+        connections.close_all()
+
+
 class VerificationBot(discord.Client):
     def __init__(self, guild_id):
         super().__init__(intents=discord.Intents.none(), allowed_mentions=discord.AllowedMentions.none())
@@ -107,6 +119,10 @@ class VerificationBot(discord.Client):
                           guild=self.guild_scope)(self.check)
         self.tree.command(name="usun_sesje", description="Usuń historię weryfikacji na tym serwerze.",
                           guild=self.guild_scope)(self.delete_history)
+        self.tree.command(name="export_answer", description="Pobierz ostatnią zapisaną odpowiedź jako JSON.",
+                          guild=self.guild_scope)(self.export_answer)
+        self.tree.command(name="export_history", description="Pobierz historię tej sesji jako JSON.",
+                          guild=self.guild_scope)(self.export_history)
 
     async def setup_hook(self):
         await self.tree.sync(guild=self.guild_scope)
@@ -144,4 +160,37 @@ class VerificationBot(discord.Client):
             message = "Nie udało się usunąć historii. Spróbuj ponownie później."
         else:
             message = "Historia sesji w PRAWDOWID została usunięta."
+        await interaction.edit_original_response(content=message)
+
+    async def export_answer(self, interaction: discord.Interaction):
+        await self._send_export(interaction, latest_only=True)
+
+    async def export_history(self, interaction: discord.Interaction):
+        await self._send_export(interaction, latest_only=False)
+
+    async def _send_export(self, interaction, *, latest_only):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        key = discord_session_key(self.guild_scope.id, interaction.user.id)
+        # The interaction's file size is available in discord.py 2.6 and newer.
+        max_bytes = getattr(interaction, "filesize_limit", None)
+        if max_bytes is None and interaction.guild is not None:
+            max_bytes = interaction.guild.filesize_limit
+        try:
+            file = await asyncio.to_thread(export_discord_data, key, latest_only, max_bytes)
+        except ExportTooLarge:
+            message = "Plik JSON przekracza limit załącznika Discorda."
+        except (DatabaseError, OSError):
+            message = EXPORT_UNAVAILABLE
+        else:
+            if file is not None:
+                filename = EXPORT_ANSWER_FILENAME if latest_only else EXPORT_HISTORY_FILENAME
+                with file:
+                    attachment = discord.File(file, filename=filename)
+                    try:
+                        await interaction.edit_original_response(content="Plik JSON jest w załączniku.",
+                                                                 attachments=[attachment])
+                    finally:
+                        attachment.close()
+                return
+            message = NO_ANSWER if latest_only else NO_HISTORY
         await interaction.edit_original_response(content=message)

@@ -20,6 +20,7 @@ from django.conf import settings
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 
+from .history_export import answer_snapshot
 from .models import RateLimitBucket, SecurityEvent, VerificationRun, VerificationSession
 from .privacy import mask_text, url_origin
 
@@ -51,6 +52,13 @@ def discord_session_key(guild_id, user_id):
 
 def _key_hash(key, channel):
     return hashlib.sha256(f"{channel}:{key}".encode()).hexdigest()
+
+
+def active_session_runs(key, channel):
+    runs = VerificationRun.objects.filter(channel=channel)
+    if not settings.PRAWDOWID_AUDIT_ENABLED or not valid_session_key(key):
+        return runs.none()
+    return runs.filter(session__key_hash=_key_hash(key, channel), session__expires_at__gt=timezone.now())
 
 
 def delete_session(key, channel):
@@ -191,8 +199,11 @@ def save_run(trace, material, result):
         ]
         outcomes.append(outcome)
     question = ""
+    snapshot = None
     if result["status"] != "rejected":
         question = url_origin(material.strip()) if trace.mode == "url" else mask_text(material)
+        if trace.channel in ("web", "discord"):
+            snapshot = answer_snapshot(result)
     with transaction.atomic():
         # A deletion or expiry during inference invalidates this exact session row.
         session = VerificationSession.objects.select_for_update().filter(
@@ -203,7 +214,7 @@ def save_run(trace, material, result):
         VerificationRun.objects.create(
             request_id=trace.request_id, session=session, channel=trace.channel, mode=trace.mode,
             question=question,
-            created_at=trace.created_at, status=result["status"], outcomes=outcomes,
+            created_at=trace.created_at, status=result["status"], outcomes=outcomes, answer_snapshot=snapshot,
             elapsed_ms=round((perf_counter() - trace.started) * 1000),
             stages=trace.stages, models_used=trace.models_used,
         )

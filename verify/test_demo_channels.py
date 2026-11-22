@@ -128,6 +128,7 @@ class DiscordDemoFlowTest(TransactionTestCase):
         bot = VerificationBot(10)
         interaction = Mock()
         interaction.user.id = 20
+        interaction.filesize_limit = 1024 * 1024
         interaction.response.defer = AsyncMock()
         interaction.edit_original_response = AsyncMock()
         command = bot.tree.get_command("sprawdz", guild=bot.guild_scope)
@@ -144,6 +145,47 @@ class DiscordDemoFlowTest(TransactionTestCase):
         self.assertIn(f"<{RSO_URL}>", message)
         run = VerificationRun.objects.get(channel="discord")
         self.assertEqual(run.outcomes[0]["evidence"][0]["document_id"], chunk.document_id)
+
+        captured = []
+
+        async def capture_export(*, content, attachments):
+            self.assertIn("Plik JSON", content)
+            attachment, = attachments
+            captured.append((attachment.filename, json.load(attachment.fp)))
+
+        interaction.edit_original_response.side_effect = capture_export
+
+        for export_type, filename, detail in (
+            ("answer", "prawdowid-odpowiedz.json", "full"), ("history", "prawdowid-historia.json", "summary"),
+        ):
+            with self.subTest(export_type=export_type):
+                interaction.response.defer.reset_mock()
+                export = bot.tree.get_command(f"export_{export_type}", guild=bot.guild_scope)
+                async_to_sync(export.callback)(bot, interaction)
+                interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+                actual_filename, data = captured.pop()
+                self.assertEqual(actual_filename, filename)
+                self.assertEqual((data["schema_version"], data["export_type"]), (1, export_type))
+                [record] = data["runs"]
+                self.assertEqual(record["request_id"], str(run.request_id))
+                self.assertEqual(record["detail_level"], detail)
+                evidence = record["outcomes"][0]["evidence"][0]
+                self.assertEqual(evidence["document_id"], chunk.document_id)
+                if export_type == "answer":
+                    self.assertEqual(evidence["url"], RSO_URL)
+                    self.assertIn("darmowa, powszechna usługa", evidence["quote"])
+
+        interaction.edit_original_response.side_effect = None
+        export_history = bot.tree.get_command("export_history", guild=bot.guild_scope)
+        interaction.filesize_limit = 1
+        async_to_sync(export_history.callback)(bot, interaction)
+        self.assertEqual(interaction.edit_original_response.await_args.kwargs,
+                         {"content": "Plik JSON przekracza limit załącznika Discorda."})
+
+        interaction.user.id = 21
+        async_to_sync(export_history.callback)(bot, interaction)
+        self.assertEqual(interaction.edit_original_response.await_args.kwargs,
+                         {"content": "Brak zapisanych sprawdzeń w tej sesji."})
 
 
 @skipUnless(os.getenv("PRAWDOWID_LIVE_CHANNEL_TESTS") == "1", "Opcjonalna próba z rzeczywistym modelem.")

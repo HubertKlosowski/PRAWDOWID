@@ -13,6 +13,10 @@
 </form>
 {% if history_deleted %}<p role="status">Historia sesji została usunięta.</p>{% endif %}
 {% if has_history_session %}
+<ul>
+  <li><a href="{% url 'export_answer' %}">Pobierz ostatnią odpowiedź (JSON)</a></li>
+  <li><a href="{% url 'export_history' %}">Pobierz historię tej sesji (JSON)</a></li>
+</ul>
 <form method="post" action="{% url 'delete_history' %}">
   {% csrf_token %}
   <button type="submit">Usuń historię tej sesji</button>

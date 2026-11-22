@@ -63,6 +63,93 @@ class MaskingTests(SimpleTestCase):
 @override_settings(PRAWDOWID_RETENTION_DAYS=7)
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="", PRAWDOWID_LLM_URL="", PRAWDOWID_LLM_MODEL="demo/model")
 class VerificationHistoryTests(TestCase):
+    def test_exports_latest_answer_and_session_history_without_cross_channel_data(self):
+        key = audit.new_session_key()
+        self.client.cookies[audit.COOKIE_NAME] = key
+        legacy = audit.open_trace(key, "web", "text")
+        audit.save_run(legacy, "Starsze pytanie", unresolved("abstained"))
+        VerificationRun.objects.filter(pk=legacy.request_id).update(answer_snapshot=None)
+
+        legacy_response = self.client.get("/sesja/odpowiedz.json")
+        legacy_run = json.loads(legacy_response.getvalue())["runs"][0]
+        self.assertEqual(legacy_run["detail_level"], "summary")
+        self.assertEqual(legacy_run["request_id"], str(legacy.request_id))
+
+        answer = audit.open_trace(key, "web", "url")
+        supported = {
+            "status": "resolved", "verdict": "true", "claim": MATERIAL,
+            "class_scores": {"POTWIERDZONE": 1.0}, "score_type": "model_estimate_not_calibrated",
+            "explanation": "Zgodne ze źródłem. " + MATERIAL,
+            "evidence_strength": {"level": "moderate", "factors": ["Jedno źródło."]},
+            "evidence": [{"id": "11.1", "document_id": 4, "chunk_id": "11", "relation": "supports",
+                          "title": "Komunikat", "publisher": "Testowy urząd", "quote": MATERIAL,
+                          "published_at": "2026-11-20", "url": "https://example.org/dowod?token=secret#fragment"}],
+            "fact_checks": [{"id": "fc-1", "cited": True, "claimant": "Imię i nazwisko",
+                             "source_url": "https://example.org/weryfikacja"}],
+            "internal_data": "secret",
+        }
+        audit.save_run(answer, "https://example.org/private?token=secret", {
+            "status": "multiple_claims", "claims_truncated": True,
+            "claims": [supported, unresolved("technical_error", reason_code="retrieval_failed")],
+        })
+        rejected = audit.open_trace(key, "web", "url")
+        audit.save_run(rejected, "https://example.org/private?token=secret", {"status": "rejected"})
+        discord = audit.open_trace(key, "discord", "text")
+        audit.save_run(discord, "Prywatna teza Discord", unresolved("abstained"))
+        other = audit.open_trace(audit.new_session_key(), "web", "text")
+        audit.save_run(other, "Prywatna teza innej osoby", unresolved("abstained"))
+
+        self.assertContains(self.client.get("/"), "Pobierz ostatnią odpowiedź (JSON)")
+        self.assertContains(self.client.get("/"), "Pobierz historię tej sesji (JSON)")
+        response = self.client.get("/sesja/odpowiedz.json", {"session": other.request_id})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Content-Disposition"], 'attachment; filename="prawdowid-odpowiedz.json"')
+        self.assertEqual(response.headers["Content-Type"], "application/json")
+        self.assertIn("no-store", response.headers["Cache-Control"])
+        raw = response.getvalue()
+        for sensitive in (b"test@example.org", b"secret", b"claimant", key.encode()):
+            self.assertNotIn(sensitive, raw)
+        exported = json.loads(raw)
+        self.assertEqual((exported["schema_version"], exported["export_type"]), (1, "answer"))
+        run, = exported["runs"]
+        self.assertEqual(run["request_id"], str(answer.request_id))
+        self.assertEqual(run["question"], "https://example.org")
+        self.assertEqual(run["detail_level"], "full")
+        self.assertTrue(run["claims_truncated"])
+        first, second = run["outcomes"]
+        self.assertEqual(first["claim"], MASKED)
+        self.assertEqual(first["explanation"], "Zgodne ze źródłem. " + MASKED)
+        self.assertEqual(first["score_type"], "model_estimate_not_calibrated")
+        self.assertEqual(first["evidence"][0]["quote"], MASKED)
+        self.assertEqual(first["evidence"][0]["url"], "https://example.org/dowod")
+        self.assertEqual(first["fact_checks"][0]["source_url"], "https://example.org/weryfikacja")
+        self.assertEqual((second["status"], second["verdict"]), ("technical_error", None))
+
+        response = self.client.get("/sesja/historia.json")
+        exported = json.loads(response.getvalue())
+        self.assertEqual((exported["schema_version"], exported["export_type"]), (1, "history"))
+        self.assertEqual([item["request_id"] for item in exported["runs"]],
+                         [str(trace.request_id) for trace in (rejected, answer, legacy)])
+        self.assertEqual(exported["runs"][0]["question"], "")
+        summary = exported["runs"][1]
+        self.assertEqual(summary["detail_level"], "summary")
+        self.assertEqual(summary["outcomes"][0]["evidence"],
+                         [{"document_id": 4, "chunk_id": "11", "relation": "supports"}])
+        self.assertNotIn("explanation", summary["outcomes"][0])
+
+    def test_exports_respect_expiry_and_do_not_create_a_session(self):
+        self.assertContains(self.client.get("/sesja/odpowiedz.json"), "Brak zapisanej odpowiedzi", status_code=404)
+        self.assertFalse(VerificationSession.objects.exists())
+        key = audit.new_session_key()
+        self.client.cookies[audit.COOKIE_NAME] = key
+        trace = audit.open_trace(key, "web", "text")
+        audit.save_run(trace, "Pytanie", unresolved("abstained"))
+        VerificationSession.objects.filter(pk=trace.session_id).update(expires_at=timezone.now())
+        self.assertContains(self.client.get("/sesja/historia.json"), "Brak zapisanych sprawdzeń", status_code=404)
+        self.assertTrue(VerificationRun.objects.filter(pk=trace.request_id).exists())
+        audit.delete_session(key, "web")
+        self.assertEqual(self.client.get("/sesja/odpowiedz.json").status_code, 404)
+
     def test_web_records_masked_request_and_deletes_only_its_own_history(self):
         completion = json.dumps({"claims": [{"text": MATERIAL, "context": None}], "truncated": False})
         with (

@@ -244,9 +244,10 @@ Po aktualizacji uruchom `uv run python manage.py migrate`. WWW, CLI i Discord
 zapisują jeden rekord przebiegu na zgłoszenie. Zawiera on identyfikator żądania,
 czas, zamaskowane pytanie, wyniki poszczególnych tez i identyfikatory dokumentów
 oraz fragmentów. Użyte weryfikacje Google mają zapisany host i skrót adresu.
-Dla zgłoszonego URL zapisujemy wyłącznie schemat i host. Cytaty i treść pobranego
-artykułu nie są archiwizowane w historii. Wejścia odrzucone przez usługę z powodu
-walidacji, np. niedozwolony URL, mają kod zdarzenia bez zapisanego pytania.
+Dla zgłoszonego URL zapisujemy wyłącznie schemat i host. W WWW i Discordzie
+nowe sprawdzenia zachowują też zamaskowaną kopię odpowiedzi z krótkimi cytatami
+ze źródeł. Wejścia odrzucone przez usługę z powodu walidacji, np. niedozwolony
+URL, mają kod zdarzenia bez zapisanego pytania.
 
 Maskowanie obejmuje oczywiste e-maile, polskie numery telefonu, PESEL i oznaczone
 numery identyfikacyjne. Działa przed zapisem i wysłaniem danych do Google Fact
@@ -264,6 +265,16 @@ na tych danych. Pobieranie strony nadal wymaga przesłania jej adresu do serwera
   sesji, ustaw go jako `PRAWDOWID_DEMO_SESSION` lub przekaż przez `--session`.
   Gdy zmienna jest ustawiona, `uv run python manage.py verify_claim --delete-session`
   usuwa jej historię. Baza przechowuje skróty kluczy sesji.
+
+W WWW linki „Pobierz ostatnią odpowiedź (JSON)” i „Pobierz historię tej sesji
+(JSON)” znajdują się obok opcji usunięcia historii. W Discordzie odpowiadają
+im komendy `/export_answer` i `/export_history`, które zwracają prywatne
+załączniki. Każdy kanał udostępnia dane bieżącej sesji. Plik zawiera
+`schema_version`, `export_type` i listę `runs`. Historia obejmuje podsumowania
+od najnowszego, także odrzucone zgłoszenia. Eksport odpowiedzi pomija odrzucone
+zgłoszenia i zwraca jeden wpis z `detail_level` równym `full` dla nowych sprawdzeń
+lub `summary` dla wpisów sprzed wprowadzenia eksportu. Linki do dowodów są
+zapisywane bez danych logowania, parametrów zapytania i fragmentów adresu.
 
 Domyślna retencja sesji, jej historii i zapisanych zdarzeń wynosi **7 dni od
 utworzenia sesji**. Ustawienie `PRAWDOWID_RETENTION_DAYS` dotyczy nowo tworzonych

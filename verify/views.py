@@ -3,12 +3,15 @@ from time import perf_counter
 from django import forms
 from django.conf import settings
 from django.db import DatabaseError
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
-from .audit import COOKIE_NAME, delete_session, new_session_key, retention_period, valid_session_key
+from .audit import COOKIE_NAME, active_session_runs, delete_session, new_session_key, retention_period, valid_session_key
+from .history_export import (
+    EXPORT_ANSWER_FILENAME, EXPORT_HISTORY_FILENAME, EXPORT_UNAVAILABLE, NO_ANSWER, NO_HISTORY, build_export,
+)
 from .security import enforce_limit, limit_message
 from .verification import MAX_MATERIAL_LENGTH, InvalidMaterial, material_mode, verify
 
@@ -66,6 +69,21 @@ def index(request):
         response.set_cookie(COOKIE_NAME, session_key, httponly=True, secure=request.is_secure(),
                             samesite="Lax", max_age=int(retention_period().total_seconds()))
     return response
+
+
+@never_cache
+@require_safe
+def download_export(request, *, latest_only):
+    try:
+        runs = active_session_runs(request.COOKIES.get(COOKIE_NAME), "web")
+        file = build_export(runs, latest_only=latest_only)
+    except (DatabaseError, OSError):
+        return HttpResponse(EXPORT_UNAVAILABLE, status=503, content_type="text/plain; charset=utf-8")
+    if file is None:
+        return HttpResponse(NO_ANSWER if latest_only else NO_HISTORY, status=404,
+                            content_type="text/plain; charset=utf-8")
+    filename = EXPORT_ANSWER_FILENAME if latest_only else EXPORT_HISTORY_FILENAME
+    return FileResponse(file, as_attachment=True, filename=filename, content_type="application/json")
 
 
 @never_cache

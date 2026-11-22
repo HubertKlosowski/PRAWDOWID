@@ -45,6 +45,7 @@ class VerificationRun(models.Model):
     created_at = models.DateTimeField(db_index=True)
     status = models.CharField(max_length=24)
     outcomes = models.JSONField(default=list)
+    answer_snapshot = models.JSONField(null=True)
     elapsed_ms = models.PositiveIntegerField()
     stages = models.JSONField(default=dict)
     models_used = models.JSONField(default=dict)
