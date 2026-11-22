@@ -16,8 +16,8 @@ class VerificationArchitectureTests(SimpleTestCase):
     @patch("torch.cuda.empty_cache")
     @patch("torch.cuda.is_initialized", return_value=True)
     def test_cuda_cache_is_released_after_verification(self, initialized, empty_cache):
-        complete = Mock(side_effect=[{"chunk_ids": ["42"]}, REPLY, REVIEW])
-        empty_cache.side_effect = lambda: self.assertEqual(complete.call_count, 3)
+        complete = Mock(side_effect=[REPLY, REVIEW])
+        empty_cache.side_effect = lambda: self.assertEqual(complete.call_count, 2)
         result = verify("Twierdzenie", search=lambda *_: [CHUNK], complete=complete)
         self.assertEqual(result["status"], "resolved")
         empty_cache.assert_called_once_with()
@@ -43,15 +43,15 @@ class VerificationArchitectureTests(SimpleTestCase):
         for status in ("needs_clarification", "out_of_scope"):
             with self.subTest(status=status):
                 rejection = {"status": status, "label": None, "class_scores": None, "quote_ids": []}
-                complete = Mock(side_effect=[{"chunk_ids": []}, rejection])
+                complete = Mock(return_value=rejection)
                 result = verify(text, search=lambda *_: [CHUNK], complete=complete)
                 self.assertEqual(result["status"], "abstained")
                 self.assertEqual(result["reason_code"], "no_confirmed_citations")
                 self.assertIsNone(result["verdict"])
-                self.assertEqual(complete.call_count, 2)
+                self.assertEqual(complete.call_count, 1)
 
     def test_switching_provider_configuration_preserves_result_contract(self):
-        replies = [{"chunk_ids": ["42"]}, REPLY, REVIEW]
+        replies = [REPLY, REVIEW]
         search = Mock(return_value=[CHUNK])
         with (
             patch.dict("os.environ", PRAWDOWID_LLM_URL="", PRAWDOWID_LLM_MODEL="local-test", RAG_TOP_K="5"),
@@ -65,9 +65,9 @@ class VerificationArchitectureTests(SimpleTestCase):
 
         self.assertEqual(local_result["status"], "resolved")
         self.assertEqual(local_result, remote_result)
-        self.assertEqual(local.call_count, 3)
+        self.assertEqual(local.call_count, 2)
         self.assertEqual(local.call_args.args[0], "local-test")
-        self.assertEqual(remote.call_count, 3)
+        self.assertEqual(remote.call_count, 2)
         self.assertEqual(remote.call_args.args[:2], ("https://example.org/chat", "remote-test"))
         self.assertEqual([call.args for call in search.call_args_list], [("Twierdzenie", 15)] * 2)
 
@@ -75,7 +75,7 @@ class VerificationArchitectureTests(SimpleTestCase):
     @patch("verify.verification.fetch", return_value=("https://example.org/article", "Artykuł", "Twierdzenie"))
     @patch("verify.analysis._request_completion")
     def test_web_and_cli_use_same_verification_result(self, complete, fetch, search):
-        complete.side_effect = [{"chunk_ids": ["42"]}, REPLY, REVIEW] * 4
+        complete.side_effect = [REPLY, REVIEW] * 4
         for mode, value in (("text", "Twierdzenie"), ("url", "https://example.org/article")):
             with self.subTest(mode=mode):
                 web = self.client.post("/", {"material": value})

@@ -1,10 +1,11 @@
+import os
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase, override_settings
 
-from .analysis import EVIDENCE_PROMPT, RELEVANCE_PROMPT, SYSTEM_PROMPT
+from .analysis import EVIDENCE_PROMPT, SYSTEM_PROMPT
 from .fetch import SourceUnavailable
 
 ABSTENTION = {"status": "abstained", "label": None, "class_scores": None, "quote_ids": []}
@@ -104,7 +105,7 @@ class VerificationPageTests(SimpleTestCase):
     @patch("verify.retrieval.embed", return_value=[[1.0, 0.0]])
     @patch("verify.retrieval.Chunk.objects")
     @patch("verify.analysis._request_completion")
-    def test_both_inputs_assess_only_selected_candidates(self, complete, objects, embed, fetch):
+    def test_both_inputs_assess_the_top_two_candidates_by_default(self, complete, objects, embed, fetch):
         material = "Treść materiału"
         document = SimpleNamespace(
             url="https://example.org/source",
@@ -121,13 +122,10 @@ class VerificationPageTests(SimpleTestCase):
         indexed_chunks = objects.filter.return_value
         indexed_chunks.exists.return_value = True
         query = indexed_chunks.select_related.return_value.order_by.return_value
-        query.__getitem__.side_effect = rows.__getitem__
+        query.__getitem__.side_effect = [rows[2], rows[1], rows[0]].__getitem__
 
         def respond(prompt, data):
             self.assertEqual(data["material"], material)
-            if prompt == RELEVANCE_PROMPT:
-                self.assertEqual([item["id"] for item in data["candidates"]], ["1", "2", "3"])
-                return {"chunk_ids": ["3", "2"]}
             if prompt == EVIDENCE_PROMPT:
                 self.assertEqual([item["id"] for item in data["citations"]], ["3.1", "2.1"])
                 return {"relation": "supports", "citations": {"3.1": "contradicts", "2.1": "supports"}}
@@ -141,7 +139,8 @@ class VerificationPageTests(SimpleTestCase):
             }
 
         complete.side_effect = respond
-        with patch.dict("os.environ", RAG_TOP_K="2"):
+        with patch.dict("os.environ"):
+            os.environ.pop("RAG_TOP_K", None)
             for mode, value in (("text", material), ("url", "https://example.org/")):
                 with self.subTest(mode=mode):
                     response = self.client.post("/", {"material": value})
@@ -151,13 +150,14 @@ class VerificationPageTests(SimpleTestCase):
                     self.assertContains(response, "Dowód przeciw.")
                     self.assertContains(response, document.url)
                     self.assertNotContains(response, rows[0].text)
-        self.assertEqual(complete.call_count, 6)
+        self.assertEqual(complete.call_count, 4)
+        self.assertEqual([call.args for call in query.__getitem__.call_args_list], [(slice(None, 6),)] * 2)
         self.assertEqual(embed.call_count, 2)
         fetch.assert_called_once_with("https://example.org/")
 
         complete.reset_mock()
+        query.__getitem__.side_effect = rows.__getitem__
         complete.side_effect = [
-            {"chunk_ids": []},
             {
                 "status": "resolved",
                 "label": "POTWIERDZONE",
@@ -165,26 +165,25 @@ class VerificationPageTests(SimpleTestCase):
                 "quote_ids": ["2.1"],
             },
             {"relation": "supports", "citations": {"2.1": "supports"}},
-            {"chunk_ids": []},
             ABSTENTION,
         ]
         with patch.dict("os.environ", RAG_TOP_K="2"):
-            recovered = self.client.post("/", {"material": material})
+            resolved = self.client.post("/", {"material": material})
             unverified = self.client.post("/", {"material": "Inne twierdzenie"})
-        self.assertEqual(complete.call_count, 5)
-        for call in (complete.call_args_list[1], complete.call_args_list[4]):
+        self.assertEqual(complete.call_count, 3)
+        for call in (complete.call_args_list[0], complete.call_args_list[2]):
             prompt, data = call.args
             self.assertEqual(prompt, SYSTEM_PROMPT)
             self.assertEqual([list(item["quotes"]) for item in data["fragments"]], [["1.1"], ["2.1"]])
-        self.assertContains(recovered, "<h3>Potwierdzone</h3>", html=True)
-        self.assertContains(recovered, 'data-status="resolved"')
-        self.assertContains(recovered, f'<a href="{document.url}" rel="noopener noreferrer">{document.title}</a>', html=True)
-        self.assertContains(recovered, "Dokument 10, fragment 2.")
-        self.assertContains(recovered, "Data publikacji nieznana.")
-        self.assertContains(recovered, "Testowy urząd")
-        self.assertContains(recovered, "Szacunki są nieskalibrowane.")
-        self.assertContains(recovered, "Siła dowodów: Umiarkowana")
-        self.assertContains(recovered, "Dowód za.")
+        self.assertContains(resolved, "<h3>Potwierdzone</h3>", html=True)
+        self.assertContains(resolved, 'data-status="resolved"')
+        self.assertContains(resolved, f'<a href="{document.url}" rel="noopener noreferrer">{document.title}</a>', html=True)
+        self.assertContains(resolved, "Dokument 10, fragment 2.")
+        self.assertContains(resolved, "Data publikacji nieznana.")
+        self.assertContains(resolved, "Testowy urząd")
+        self.assertContains(resolved, "Szacunki są nieskalibrowane.")
+        self.assertContains(resolved, "Siła dowodów: Umiarkowana")
+        self.assertContains(resolved, "Dowód za.")
         self.assertContains(unverified, "<h3>Brak rozstrzygnięcia</h3>", html=True)
         self.assertContains(unverified, "Znalezione materiały nie dostarczyły cytatu")
         self.assertNotContains(unverified, "Dowody ze źródeł")

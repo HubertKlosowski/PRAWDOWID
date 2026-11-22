@@ -78,7 +78,7 @@ Polecenie wymaga pamięci GPU na model oceniający. Możesz ustawić `QWEN_DEVIC
 | --- | --- |
 | QWEN_EMBEDDING_PATH | Opcjonalna ścieżka do lokalnej kopii Qwen3-Embedding-0.6B (1024 wymiary). Domyślnie `Qwen/Qwen3-Embedding-0.6B` |
 | QWEN_DEVICE | Urządzenie embeddingów, np. cpu lub cuda |
-| RAG_TOP_K | Maksymalna liczba fragmentów do końcowej oceny, domyślnie 5. pgvector pobiera do trzech razy tyle kandydatów, maksymalnie 40 |
+| RAG_TOP_K | Maksymalna liczba fragmentów przekazywanych do oceny, domyślnie 2. Przed filtrowaniem według okresu pgvector pobiera do trzech razy tyle kandydatów, maksymalnie 40 |
 | PRAWDOWID_LLM_DEVICE | Opcjonalne urządzenie oceny. Domyślny model używa CPU, jeśli GPU ma mniej niż 10 GiB wolnej pamięci |
 | PRAWDOWID_LLM_MODEL | Model oceniający, domyślnie Qwen/Qwen3.5-4B z lokalnego cache |
 | PRAWDOWID_LLM_URL | Opcjonalny pełny adres endpointu chat/completions. Po ustawieniu materiał i fragmenty są wysyłane do tego endpointu |
@@ -98,7 +98,7 @@ Testy jednostkowe korzystają z atrap inferencji i połączeń sieciowych. Formu
 
 Aplikacja zwraca `resolved` z werdyktem i klikalnymi cytatami albo jeden ze statusów bez werdyktu. `abstained` oznacza niewystarczające lub sprzeczne dowody. `material_unavailable` oznacza niedostępny lub nieczytelny artykuł albo przekroczenie limitu długości pobranego tekstu. `needs_clarification` prosi o doprecyzowanie tezy. `out_of_scope` dotyczy zadań innych niż sprawdzanie twierdzeń faktograficznych. `technical_error` oznacza awarię wyszukiwania lub brak poprawnej odpowiedzi modelu.
 
-Model wybiera identyfikatory gotowych cytatów. Druga ocena sprawdza ich związek z całą tezą bez dostępu do proponowanego werdyktu. Rozstrzygnięcie wymaga zgodności obu ocen. Przy sprzecznych relacjach aplikacja wstrzymuje rozstrzygnięcie. Cytaty, ich metadane i tekst objaśnienia pochodzą z aplikacji. Ocena związku cytatu z tezą zależy od modelu. Po pustej selekcji fragmentów ocena korzysta z najbliższych wyników pgvector, do limitu RAG_TOP_K.
+Po filtrowaniu i uporządkowaniu kandydatów według zgodności z okresem tezy aplikacja przekazuje do oceny najwyżej sklasyfikowane fragmenty z pgvector. Model ocenia tezę i wybiera identyfikatory gotowych cytatów w jednym wywołaniu. Druga ocena sprawdza związek cytatów z całą tezą bez dostępu do proponowanego werdyktu. Rozstrzygnięcie wymaga zgodności obu ocen. Przy sprzecznych relacjach aplikacja wstrzymuje rozstrzygnięcie. Cytaty, ich metadane i tekst objaśnienia pochodzą z aplikacji.
 
 ### Próba spójności kanałów
 

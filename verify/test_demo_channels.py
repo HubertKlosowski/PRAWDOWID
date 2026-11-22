@@ -12,7 +12,7 @@ from asgiref.sync import async_to_sync
 from django.core.management import call_command
 from django.test import Client, TestCase, TransactionTestCase
 
-from .analysis import EVIDENCE_PROMPT, RELEVANCE_PROMPT, SYSTEM_PROMPT
+from .analysis import EVIDENCE_PROMPT, SYSTEM_PROMPT
 from .claims import CLAIMS_PROMPT
 from .corpus import load_demo_corpus
 from .fetch import extract
@@ -45,8 +45,6 @@ def complete_fixture(name, messages):
     if prompt == CLAIMS_PROMPT:
         texts = [text for text in (SUPPORTED, UNSUPPORTED) if text in material]
         reply = {"claims": [{"text": text, "context": None} for text in texts], "truncated": False}
-    elif prompt == RELEVANCE_PROMPT:
-        reply = {"chunk_ids": [data["candidates"][0]["id"]] if material == SUPPORTED else []}
     elif prompt == SYSTEM_PROMPT and material == SUPPORTED:
         quote_id = next(
             key for part in data["fragments"] for key, value in part["quotes"].items()

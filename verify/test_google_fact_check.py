@@ -9,7 +9,6 @@ from .analysis import (
     CLAIM_QUERY_PROMPT,
     EVIDENCE_PROMPT,
     FACT_CHECK_RELEVANCE_PROMPT,
-    RELEVANCE_PROMPT,
     SYSTEM_PROMPT,
 )
 from .fetch import SourceUnavailable
@@ -148,7 +147,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
         read.side_effect = [
             json_body({"choices": [{"message": {"content": json.dumps(reply)}}]})
             for reply in (
-                query_reply((CLAIM, "pl")), {"claim_ids": ["1"]}, {"chunk_ids": ["42"]},
+                query_reply((CLAIM, "pl")), {"claim_ids": ["1"]},
                 {**REPLY, "fact_check_ids": ["fc-1"]}, REVIEW,
             )
         ]
@@ -168,14 +167,14 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
                          ["rezerwat Żurawie jest otwarty w soboty"])
         requests = [json.loads(call.args[0].data) for call in model.open.call_args_list]
         self.assertEqual([body["messages"][0]["content"] for body in requests], [
-            CLAIM_QUERY_PROMPT, FACT_CHECK_RELEVANCE_PROMPT, RELEVANCE_PROMPT, SYSTEM_PROMPT, EVIDENCE_PROMPT,
+            CLAIM_QUERY_PROMPT, FACT_CHECK_RELEVANCE_PROMPT, SYSTEM_PROMPT, EVIDENCE_PROMPT,
         ])
         self.assertTrue(all(body["model"] == "Qwen/Qwen3.5-4B" for body in requests))
         relevance_data = json.loads(requests[1]["messages"][1]["content"])
         self.assertEqual(relevance_data["queries"], [CLAIM])
         self.assertEqual([item["claim"] for item in relevance_data["candidates"]], [MATCH, UNRELATED])
         self.assertTrue(all("rating" not in item for item in relevance_data["candidates"]))
-        messages = requests[3]["messages"]
+        messages = requests[2]["messages"]
         self.assertEqual([message["role"] for message in messages], ["system", "user"])
         self.assertNotIn(REVIEW_TITLE, messages[0]["content"])
         self.assertNotIn("<|im_start|>", messages[1]["content"])
@@ -186,7 +185,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
         self.assertEqual([item["claim"] for item in data["fact_checks"]], [MATCH, MATCH])
         self.assertEqual([item["rating"] for item in data["fact_checks"]], ["Prawda", "Fałsz"])
         self.assertEqual(data["fact_checks"][0]["review_title"], REVIEW_TITLE)
-        self.assertNotIn("fact_checks", json.loads(requests[4]["messages"][1]["content"]))
+        self.assertNotIn("fact_checks", json.loads(requests[3]["messages"][1]["content"]))
         self.assertEqual(response.context["result"]["status"], "resolved")
         self.assertContains(response, REVIEW_URL)
         self.assertContains(response, "Redakcja B")
@@ -205,7 +204,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
             patch("verify.google_fact_check.build_opener", return_value=google),
         ):
             complete = Mock(side_effect=[
-                query_reply(*zip(queries, ("pl", "en", "pl"))), {"chunk_ids": ["42"]}, REPLY, REVIEW,
+                query_reply(*zip(queries, ("pl", "en", "pl"))), REPLY, REVIEW,
             ])
             corpus = Mock(return_value=[RAG_CHUNK])
             result = verify(url, mode="url", complete=complete, search=corpus)
@@ -216,7 +215,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
         self.assertEqual([params["languageCode"] for params in requests], [["pl"], ["en"], ["pl"]])
         self.assertEqual(corpus.call_args.args[0], article)
         self.assertEqual(result["status"], "resolved")
-        self.assertNotIn("fact_checks", complete.call_args_list[2].args[1])
+        self.assertNotIn("fact_checks", complete.call_args_list[1].args[1])
         self.assertNotIn("google_fact_check_unavailable", result)
 
     def test_http_timeout_invalid_json_and_invalid_schema_keep_rag_available(self):
@@ -236,7 +235,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
                     patch("verify.google_fact_check.build_opener", return_value=google),
                     patch("verify.verification.search_corpus", return_value=[RAG_CHUNK]),
                     patch("verify.analysis._request_completion", side_effect=[
-                        query_reply((CLAIM, "pl")), {"chunk_ids": ["42"]}, REPLY, REVIEW,
+                        query_reply((CLAIM, "pl")), REPLY, REVIEW,
                     ]),
                     self.assertLogs("verify.verification", level="WARNING") as logs,
                 ):
@@ -304,7 +303,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
         google.open.side_effect = [google.open.return_value, TimeoutError(API_KEY)]
         complete = Mock(side_effect=[
             query_reply((MATCH, "pl"), (second_claim, "pl")), {"claim_ids": ["1"]},
-            {"chunk_ids": ["42"]}, {**ABSTENTION, "fact_check_ids": ["fc-1"]},
+            {**ABSTENTION, "fact_check_ids": ["fc-1"]},
         ])
         with (
             patch("verify.google_fact_check.build_opener", return_value=google),
@@ -321,7 +320,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
         google = mock_opener({"claims": [MATCH_RECORD]})
         with patch("verify.google_fact_check.build_opener", return_value=google):
             complete = Mock(side_effect=[
-                query_reply((UNRELATED, "pl")), {"claim_ids": []}, {"chunk_ids": ["42"]}, ABSTENTION,
+                query_reply((UNRELATED, "pl")), {"claim_ids": []}, ABSTENTION,
             ])
             result = verify(UNRELATED, search=lambda *args: [RAG_CHUNK], complete=complete)
         self.assertEqual(complete.call_args.args[0], SYSTEM_PROMPT)
@@ -346,7 +345,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
 
     def test_generated_article_claim_is_rejected_and_rag_continues(self):
         complete = Mock(side_effect=[
-            query_reply((UNRELATED, "pl")), {"chunk_ids": ["42"]}, REPLY, REVIEW,
+            query_reply((UNRELATED, "pl")), REPLY, REVIEW,
         ])
         with (
             patch("verify.google_fact_check.build_opener") as google,
@@ -364,7 +363,6 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
         google = mock_opener({})
         complete = Mock(side_effect=[
             query_reply(("Ile wynosi roczny budżet MPK Wrocław w 2024 roku?", "pl")),
-            {"chunk_ids": []},
             {**ABSTENTION, "fact_check_ids": []},
         ])
         with patch("verify.google_fact_check.build_opener", return_value=google):
@@ -379,7 +377,7 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
         google = mock_opener({"claims": [MATCH_RECORD]})
         with patch("verify.google_fact_check.build_opener", return_value=google):
             complete = Mock(side_effect=[
-                query_reply((CLAIM, "pl")), {"claim_ids": ["1"]}, {"chunk_ids": ["42"]},
+                query_reply((CLAIM, "pl")), {"claim_ids": ["1"]},
                 {**REPLY, "fact_check_ids": ["fc-999"]},
             ])
             result = verify(CLAIM, search=lambda *args: [RAG_CHUNK], complete=complete)

@@ -4,14 +4,13 @@ import logging
 import os
 import re
 import sys
-from json import JSONDecodeError
 from time import perf_counter
 
 from django.db import DatabaseError
 from django.utils import timezone
 
 from . import audit, google_fact_check
-from .analysis import assess, fact_check_queries, select_fact_checks, select_relevant, unresolved
+from .analysis import assess, fact_check_queries, select_fact_checks, unresolved
 from .claims import extract_claims
 from .evidence_strength import evidence_strength
 from .fetch import SourceUnavailable, UnsafeTarget, fetch
@@ -204,19 +203,11 @@ def _lookup_fact_checks(material, mode, api_key, complete, period):
 def _verify_evidence(material, fact_checks, complete, search, now, period):
     search = search_corpus if search is None else search
     try:
-        limit = max(1, min(30, int(os.getenv("RAG_TOP_K", "5"))))
+        limit = max(1, min(30, int(os.getenv("RAG_TOP_K", "2"))))
         with audit.measure("retrieval"):
             candidates = search(material, min(40, limit * 3))
         ranked = sorted(((period_fit(chunk, period), chunk) for chunk in candidates), key=lambda item: item[0])
         eligible = [chunk for fit, chunk in ranked if fit < 2]
-        try:
-            selected = select_relevant(material, eligible, limit, complete=complete, period=period)
-        except ValueError as exc:
-            audit.record_security_event("invalid_model_response")
-            if not isinstance(exc, JSONDecodeError):
-                raise
-            logger.warning("Model returned invalid JSON while ranking candidates")
-            selected = []
     except Exception as exc:
         logger.warning("Verification retrieval unavailable (%s)", type(exc).__name__)
         return unresolved(
@@ -228,8 +219,7 @@ def _verify_evidence(material, fact_checks, complete, search, now, period):
     if candidates and not eligible and not fact_checks:
         result = unresolved("abstained", PERIOD_MISMATCH, reason_code="period_mismatch")
     else:
-        # Assess the nearest matches when selection may have missed relevant evidence.
-        result = assess(material, selected or eligible[:limit], fact_checks=fact_checks,
+        result = assess(material, eligible[:limit], fact_checks=fact_checks,
                         checkable=True, complete=complete, period=period)
     if candidates and not eligible and result["status"] == "abstained":
         result["explanation"] = PERIOD_MISMATCH

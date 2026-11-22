@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from django.test import SimpleTestCase
 
-from .analysis import RELEVANCE_PROMPT
+from .analysis import SYSTEM_PROMPT
 from .fetch import extract
 from .test_analysis import CHUNK, REPLY, REVIEW
 from .verification import verify
@@ -41,12 +41,12 @@ class TemporalVerificationTests(SimpleTestCase):
                    "valid_from": "2026-11-21T10:00:00+01:00", "valid_to": "2026-11-21T18:00:00+01:00"}
         retrospective = {**CHUNK, "id": "8", "published_at": "2026-01-01"}
 
-        complete = Mock(side_effect=[{"chunk_ids": []}, REPLY, REVIEW])
+        complete = Mock(side_effect=[REPLY, REVIEW])
         result = verify("Czy 21 listopada 2025 w Krakowie obowiązywało ostrzeżenie?",
                         search=lambda text, limit: [current, retrospective, OLD], complete=complete)
         prompt, data = complete.call_args_list[0].args
-        self.assertEqual(prompt, RELEVANCE_PROMPT)
-        self.assertEqual([item["id"] for item in data["candidates"]], ["42", "8"])
+        self.assertEqual(prompt, SYSTEM_PROMPT)
+        self.assertEqual([list(fragment["quotes"]) for fragment in data["fragments"]], [["42.1"], ["8.1"]])
         self.assertEqual(data["period"]["from"], "2025-11-21T00:00:00+01:00")
         self.assertEqual(result["status"], "resolved")
         self.assertEqual(result["evidence"][0]["published_at"], "2025-11-21")

@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 from django.core.management import call_command
 from django.test import SimpleTestCase, override_settings
 
-from .analysis import EVIDENCE_PROMPT, RELEVANCE_PROMPT, SYSTEM_PROMPT, assess
+from .analysis import EVIDENCE_PROMPT, SYSTEM_PROMPT, assess
 from .claims import CLAIMS_PROMPT, extract_claims
 from .test_analysis import CHUNK, REPLY, REVIEW
 from .verification import verify
@@ -23,8 +23,6 @@ class ClaimsTests(SimpleTestCase):
     def test_web_url_and_cli_keep_each_verdict_with_its_evidence(self):
         def complete(prompt, data):
             is_first = data["material"] == FIRST
-            if prompt == RELEVANCE_PROMPT:
-                return {"chunk_ids": ["42" if is_first else "43"]}
             if prompt == SYSTEM_PROMPT:
                 if is_first:
                     return REPLY
@@ -102,19 +100,6 @@ class ClaimsTests(SimpleTestCase):
                                 complete=Mock(side_effect=[prediction, review]))
                 self.assertEqual(result["status"], expected)
                 self.assertEqual(result["verdict"], "misleading" if expected == "resolved" else None)
-
-    def test_unreadable_ranking_falls_back_to_candidates_with_evidence_review(self):
-        from json import JSONDecodeError
-
-        complete = Mock(side_effect=[
-            {"claims": [{"text": FIRST, "context": None}], "truncated": False},
-            JSONDecodeError("Invalid JSON", "", 0),
-            REPLY, REVIEW,
-        ])
-        with self.assertLogs("verify.verification", level="WARNING"):
-            result = verify(FIRST, complete=complete, search=lambda *_: [CHUNK])
-        self.assertEqual(result["verdict"], "true")
-        self.assertEqual(complete.call_args.args[0], EVIDENCE_PROMPT)
 
     def test_model_adapter_accepts_json_fences(self):
         from .providers import request_completion

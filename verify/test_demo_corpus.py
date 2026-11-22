@@ -11,7 +11,7 @@ from django.core.management.base import CommandError
 from django.test import TestCase
 from django.utils import timezone
 
-from .analysis import EVIDENCE_PROMPT, RELEVANCE_PROMPT, SYSTEM_PROMPT
+from .analysis import EVIDENCE_PROMPT, SYSTEM_PROMPT
 from .claims import CLAIMS_PROMPT
 from .corpus import load_demo_corpus
 from .models import Chunk, Document
@@ -79,8 +79,6 @@ class DemoCorpusTests(TestCase):
         def complete(prompt, data):
             if prompt == CLAIMS_PROMPT:
                 return {"claims": [{"text": material, "context": None}], "truncated": False}
-            if prompt == RELEVANCE_PROMPT:
-                return {"chunk_ids": [indexed["id"]]}
             if prompt == SYSTEM_PROMPT:
                 quote_id = next(key for key, text in data["fragments"][0]["quotes"].items()
                                 if "darmowa, powszechna usługa" in text)
@@ -118,8 +116,6 @@ class DemoCorpusTests(TestCase):
         def complete(prompt, data):
             if prompt == CLAIMS_PROMPT:
                 return {"claims": [{"text": data["material"], "context": None}], "truncated": False}
-            if prompt == RELEVANCE_PROMPT:
-                return {"chunk_ids": [restored["id"]]}
             if prompt == SYSTEM_PROMPT:
                 return {**REPLY, "quote_ids": [next(iter(data["fragments"][0]["quotes"]))]}
             self.assertEqual(prompt, EVIDENCE_PROMPT)

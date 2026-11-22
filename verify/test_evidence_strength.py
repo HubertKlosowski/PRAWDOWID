@@ -71,7 +71,7 @@ class EvidenceOutcomeTests(SimpleTestCase):
     def test_conflicting_sources_show_both_citations_without_verdict(self):
         second = {**DATED, "id": "43", "document_id": 11, "text": "Treść drugiego raportu."}
         complete = Mock(side_effect=[
-            EXTRACTED, {"chunk_ids": ["42", "43"]}, {**REPLY, "quote_ids": ["42.1", "43.1"]},
+            EXTRACTED, {**REPLY, "quote_ids": ["42.1", "43.1"]},
             {"relation": "context", "citations": {"42.1": "supports", "43.1": "contradicts"}},
         ])
         result = verify("Teza faktograficzna.", search=lambda *_: [DATED, second], complete=complete)
