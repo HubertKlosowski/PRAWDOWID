@@ -57,9 +57,9 @@ uv run python manage.py check
 uv run python manage.py test
 ```
 
-Testy jednostkowe korzystają z atrap inferencji i połączeń sieciowych. Formularz przyjmuje do 12 000 znaków. Pobieranie URL obsługuje HTML i zwykły tekst. Gdy strona wymaga JavaScriptu lub artykuł jest zbyt długi, można wkleić fragment ręcznie. Materiał użytkownika służy wyłącznie bieżącej analizie.
+Testy jednostkowe korzystają z atrap inferencji i połączeń sieciowych. Formularz przyjmuje do 12 000 znaków. Pobieranie URL obsługuje HTML i zwykły tekst. Gdy strona wymaga JavaScriptu lub artykuł jest zbyt długi, można wkleić fragment ręcznie. Historia demonstratora przechowuje zamaskowane zgłoszenie i identyfikatory dowodów przez okres opisany niżej.
 
-Aplikacja zwraca `resolved` z werdyktem i klikalnymi cytatami albo jeden ze statusów bez werdyktu. `abstained` oznacza niewystarczające lub sprzeczne dowody albo niedostępny materiał. `needs_clarification` prosi o doprecyzowanie tezy. `out_of_scope` dotyczy zadań innych niż sprawdzanie twierdzeń faktograficznych. `technical_error` oznacza awarię wyszukiwania lub brak poprawnej odpowiedzi modelu.
+Aplikacja zwraca `resolved` z werdyktem i klikalnymi cytatami albo jeden ze statusów bez werdyktu. `abstained` oznacza niewystarczające lub sprzeczne dowody. `material_unavailable` oznacza niedostępny lub nieczytelny artykuł albo przekroczenie limitu długości pobranego tekstu. `needs_clarification` prosi o doprecyzowanie tezy. `out_of_scope` dotyczy zadań innych niż sprawdzanie twierdzeń faktograficznych. `technical_error` oznacza awarię wyszukiwania lub brak poprawnej odpowiedzi modelu.
 
 Model wybiera identyfikatory gotowych cytatów. Druga ocena sprawdza ich związek z całą tezą bez dostępu do proponowanego werdyktu. Rozstrzygnięcie wymaga zgodności obu ocen. Przy sprzecznych relacjach aplikacja wstrzymuje rozstrzygnięcie. Cytaty, ich metadane i tekst objaśnienia pochodzą z aplikacji. Ocena związku cytatu z tezą zależy od modelu. Po pustej selekcji fragmentów ocena korzysta z najbliższych wyników pgvector, do limitu RAG_TOP_K.
 
@@ -101,3 +101,77 @@ Adapter korzysta z Discord Gateway. Komputer z demonstratorem potrzebuje połąc
 Przy innej bazie ustaw jej zmienne połączenia i uruchom `uv run --locked --extra discord --env-file .env python manage.py run_discord`. Bot działa jako osobny proces i obsługuje jedną analizę naraz. Przy lokalnej inferencji jednoczesne uruchomienie bota i WWW wymaga pamięci na modele obu procesów. Komenda działa również przy wyłączonym serwerze WWW. Bot kończy oczekiwanie po 14 minutach. Rozpoczęta analiza może jeszcze zajmować model. Długie raporty są dostępne w załączniku tekstowym.
 
 Test adaptera z atrapami Discorda i weryfikacji uruchom poleceniem `uv run --extra discord python manage.py test verify.test_discord`.
+
+## Zgłoszenia z kilkoma tezami
+
+Model wydziela najwyżej cztery tezy z tekstu lub z pobranego artykułu. Teza i ewentualny
+kontekst muszą dosłownie wystąpić w zgłoszeniu po ujednoliceniu odstępów. Każda teza
+ma własne wyszukiwanie, ocenę i dowody. Jeżeli model zgłosi pominięcie dalszych tez,
+WWW i Discord wyświetlą komunikat, a JSON zwróci `claims_truncated: true`.
+Dla kilku tez CLI zwraca `status: multiple_claims` i listę `claims` z wynikami.
+Pojedyncza teza zachowuje dotychczasowe pola wyniku i zyskuje pole `claim`.
+
+Werdykt `misleading` („Wprowadzające w błąd”) wymaga osobnych cytatów dla prawdziwego
+elementu tezy i pominiętego kontekstu, który zmienia jej sens. Przy źródłach, które
+sobie przeczą, aplikacja wstrzymuje rozstrzygnięcie.
+
+### Powody braku werdyktu i siła dowodów
+
+Wynik bez werdyktu zawiera `reason_code`, np. `no_sources`, `conflicting_evidence`,
+`period_mismatch` albo `article_unreadable`. WWW i Discord wyświetlają objaśnienie,
+a CLI udostępnia objaśnienie i kod w JSON-ie.
+
+`evidence_strength` uwzględnia bezpośredniość zweryfikowanych cytatów, liczbę dokumentów,
+rodzaj źródła i zgodność dat z okresem tezy. Wydawcy lub domeny są wskaźnikiem odrębności.
+Tę samą domenę, tego samego wydawcę, ten sam dokument i identyczne cytaty grupujemy razem.
+Silna podstawa wymaga zgodności dat z okresem tezy, co najmniej dwóch odrębnych grup
+wspierających ten sam werdykt oraz źródła urzędowego lub pierwotnego. Jeśli adapter nie
+podaje rodzaju źródła, domeny w gov.pl klasyfikujemy jako urzędowe, a pozostałe oznaczamy
+jako nieustalone. Ocena siły dowodów opiera się na metadanych i zweryfikowanych relacjach
+cytatów do tezy.
+
+## Historia sesji i metryki
+
+Po aktualizacji uruchom `uv run python manage.py migrate`. WWW, CLI i Discord
+zapisują jeden rekord przebiegu na zgłoszenie. Zawiera on identyfikator żądania,
+czas, zamaskowane pytanie, wyniki poszczególnych tez i identyfikatory dokumentów
+oraz fragmentów. Użyte weryfikacje Google mają zapisany host i skrót adresu.
+Dla zgłoszonego URL zapisujemy wyłącznie schemat i host. Cytaty i treść pobranego
+artykułu nie są archiwizowane w historii. Wejścia odrzucone przez usługę z powodu
+walidacji, np. niedozwolony URL, mają kod zdarzenia bez zapisanego pytania.
+
+Maskowanie obejmuje oczywiste e-maile, polskie numery telefonu, PESEL i oznaczone
+numery identyfikacyjne. Działa przed zapisem i wysłaniem danych do Google Fact
+Check lub zdalnego modelu. To maskowanie wzorców, więc może pominąć np. nazwiska
+i niestandardowo zapisane identyfikatory. Przy zdalnym modelu analiza pracuje na
+zamaskowanym materiale, co może ograniczyć możliwość sprawdzenia tez opartych
+na tych danych. Pobieranie strony nadal wymaga przesłania jej adresu do serwera
+źródłowego.
+
+- **WWW** — użyj przycisku „Usuń historię tej sesji”. Przeglądarka identyfikuje
+  sesję losowym kluczem w ciasteczku HttpOnly.
+- **Discord** — użyj `/usun_sesje`. Klucz sesji jest wyprowadzany z użytkownika
+  i serwera przy użyciu sekretu bota. Usunięcie obejmuje rekordy aplikacji.
+- **CLI** — zachowaj `session_key` z wyniku jako sekret. Aby użyć tej samej
+  sesji, ustaw go jako `PRAWDOWID_DEMO_SESSION` lub przekaż przez `--session`.
+  Gdy zmienna jest ustawiona, `uv run python manage.py verify_claim --delete-session`
+  usuwa jej historię. Baza przechowuje skróty kluczy sesji.
+
+Domyślna retencja sesji, jej historii i zapisanych zdarzeń wynosi **7 dni od
+utworzenia sesji**. Ustawienie `PRAWDOWID_RETENTION_DAYS` dotyczy nowo tworzonych
+sesji. Raport metryk pomija wygasłe rekordy. Przy aktywnym demonstratorze
+aplikacja sprząta wygasłe sesje przy otwieraniu historii, najwyżej raz na dobę
+w procesie. W środowisku bez ruchu uruchamiaj codziennie
+`uv run python manage.py prune_verification_history` przez harmonogram systemu.
+Komenda usuwa sesje i ich przebiegi oraz pozostawia wspólny korpus. Logi konsolowe
+procesu zawierają diagnostykę techniczną, a ich rotację ustawia operator,
+jeżeli zapisuje je poza procesem. Retencja wiadomości Discorda i danych po
+stronie zewnętrznych dostawców zależy od ich konfiguracji.
+
+Operator może uruchomić `uv run python manage.py verification_metrics`, aby otrzymać
+liczbę analiz i statusów, udział `abstained`, medianę czasu, czasy etapów, błędy
+retrievalu i identyfikatory użytych modeli. Czasy etapów obejmują pobranie,
+wyszukiwanie w korpusie wraz z embeddingiem, model oceniający oraz opcjonalne
+zapytania Google. Rewizja lokalnego modelu jest zapisywana, gdy jest dostępna
+w metadanych. Koszt jest oznaczany jako `unknown`, ponieważ aplikacja nie ma danych
+rozliczeniowych dostawców ani pomiaru kosztu lokalnej inferencji.

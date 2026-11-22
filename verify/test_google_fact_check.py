@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, Mock, patch
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from .analysis import (
     CLAIM_QUERY_PROMPT,
@@ -134,6 +134,8 @@ class GoogleFactCheckClientTests(SimpleTestCase):
 
 
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY=API_KEY)
+@patch("verify.verification.extract_claims", new=lambda material, **kwargs: ([(" ".join(material.split()), None)], False))
+@override_settings(PRAWDOWID_AUDIT_ENABLED=False)
 class GoogleFactCheckWorkflowTests(SimpleTestCase):
     def test_web_sends_filtered_reviews_and_corpus_in_real_qwen_request(self):
         candidates = [MATCH_RECORD, {
@@ -331,12 +333,13 @@ class GoogleFactCheckWorkflowTests(SimpleTestCase):
             patch("verify.google_fact_check.build_opener") as google,
             patch("verify.verification.fetch", side_effect=SourceUnavailable("Brak tekstu.")),
         ):
-            complete = Mock(return_value={"status": "needs_clarification", "queries": []})
+            complete = Mock(return_value={"status": "needs_clarification"})
             corpus = Mock()
-            self.assertEqual(verify("Czy to prawda?", search=corpus, complete=complete)["status"],
-                             "needs_clarification")
+            with patch("verify.verification.extract_claims", return_value=([], False)):
+                self.assertEqual(verify("Czy to prawda?", search=corpus, complete=complete)["status"],
+                                 "needs_clarification")
             self.assertEqual(verify("https://example.org", mode="url", search=corpus,
-                                    complete=complete)["status"], "abstained")
+                                    complete=complete)["status"], "material_unavailable")
             complete.assert_called_once()
             google.assert_not_called()
             corpus.assert_not_called()

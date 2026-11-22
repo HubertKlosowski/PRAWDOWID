@@ -2,10 +2,15 @@
 
 import json
 import os
+import re
 from functools import lru_cache
 from threading import Lock
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+
+from .audit import measure, record_model
+from .privacy import mask_payload
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -44,6 +49,7 @@ def _local_completion(name, messages):
 
     with _local_lock, torch.inference_mode():
         tokenizer, model = load_local_model(name)
+        record_model("llm", name, "local", getattr(model.config, "_commit_hash", None))
         inputs = tokenizer.apply_chat_template(
             messages,
             tokenize=True,
@@ -60,14 +66,18 @@ def _local_completion(name, messages):
 def request_completion(system_prompt, data):
     url = os.environ.get("PRAWDOWID_LLM_URL", "")
     model = os.environ.get("PRAWDOWID_LLM_MODEL", DEFAULT_LLM_MODEL)
+    if url:
+        data = mask_payload(data)
     messages = [
         {"role": "system", "content": system_prompt},
         # Keep literal Qwen chat markers in untrusted values from becoming tokens.
         {"role": "user", "content": json.dumps(data, ensure_ascii=False).replace("<", r"\u003c")},
     ]
-    if url:
-        return _remote_completion(url, model, messages)
-    return json.loads(_local_completion(model, messages))
+    with measure("model"):
+        record_model("llm", model, "remote" if url else "local")
+        if url:
+            return _remote_completion(url, model, messages)
+        return _decode_completion(_local_completion(model, messages))
 
 
 def _remote_completion(url, model, messages):
@@ -82,4 +92,10 @@ def _remote_completion(url, model, messages):
         payload = response.read(131073)
     if len(payload) > 131072:
         raise ValueError("Za duża odpowiedź modelu.")
-    return json.loads(json.loads(payload)["choices"][0]["message"]["content"])
+    return _decode_completion(json.loads(payload)["choices"][0]["message"]["content"])
+
+
+def _decode_completion(content):
+    # Some chat models enclose an otherwise valid JSON response in a Markdown fence.
+    fenced = re.fullmatch(r"```(?:json)?[ \t]*\r?\n(.*?)\r?\n```", content.strip(), re.DOTALL | re.IGNORECASE)
+    return json.loads(fenced[1] if fenced else content)

@@ -2,15 +2,17 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
-from .analysis import EVIDENCE_PROMPT, INTENT_PROMPT, RELEVANCE_PROMPT, SYSTEM_PROMPT
+from .analysis import EVIDENCE_PROMPT, RELEVANCE_PROMPT, SYSTEM_PROMPT
 from .fetch import SourceUnavailable
 
 ABSTENTION = {"status": "abstained", "label": None, "class_scores": None, "quote_ids": []}
 
 
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="")
+@patch("verify.verification.extract_claims", new=lambda material, **kwargs: ([(" ".join(material.split()), None)], False))
+@override_settings(PRAWDOWID_AUDIT_ENABLED=False)
 class VerificationPageTests(SimpleTestCase):
     def test_form_available(self):
         response = self.client.get("/")
@@ -29,9 +31,9 @@ class VerificationPageTests(SimpleTestCase):
         fetch.assert_called_once_with(url)
         retrieve.assert_called_once()
         self.assertEqual(retrieve.call_args.args[0], "Treść materiału")
-        complete.assert_called_once_with(INTENT_PROMPT, {"material": "Treść materiału"})
+        complete.assert_not_called()
         self.assertContains(response, 'data-status="abstained"')
-        self.assertContains(response, "brakuje wystarczających dowodów")
+        self.assertContains(response, "W korpusie nie znaleziono źródeł")
         self.assertIsNone(response.context["result"]["verdict"])
         self.assertNotContains(response, "Szacunki modelu dla klas")
         self.assertContains(response, "Czas weryfikacji <strong>1,25 s</strong>")
@@ -60,9 +62,11 @@ class VerificationPageTests(SimpleTestCase):
 
     @patch("verify.verification.search_corpus")
     @patch("verify.verification.fetch", side_effect=SourceUnavailable("Strona nie zawiera dostępnego tekstu."))
-    def test_unavailable_url_abstains(self, fetch, retrieve):
+    def test_unavailable_url_has_its_own_status(self, fetch, retrieve):
         response = self.client.post("/", {"material": "https://example.org/"})
-        self.assertContains(response, 'data-status="abstained"')
+        self.assertContains(response, 'data-status="material_unavailable"')
+        self.assertContains(response, "<h3>Materiał niedostępny</h3>", html=True)
+        self.assertEqual(response.context["result"]["reason_code"], "article_unreadable")
         self.assertContains(response, "Strona nie zawiera dostępnego tekstu.")
         self.assertIsNone(response.context["result"]["verdict"])
         retrieve.assert_not_called()
@@ -81,7 +85,8 @@ class VerificationPageTests(SimpleTestCase):
             ("RSO jest darmowy.", "technical_error", "Błąd techniczny"),
         ):
             with self.subTest(status=status):
-                response = self.client.post("/", {"material": text})
+                with patch("verify.verification.extract_claims", return_value=([], False)):
+                    response = self.client.post("/", {"material": text})
                 self.assertContains(response, f'data-status="{status}"')
                 self.assertContains(response, f"<h3>{heading}</h3>", html=True)
                 self.assertIsNone(response.context["result"]["verdict"])
@@ -130,7 +135,7 @@ class VerificationPageTests(SimpleTestCase):
             return {
                 "status": "resolved",
                 "label": "POTWIERDZONE",
-                "class_scores": {"POTWIERDZONE": 0.8, "ZAPRZECZONE": 0.1, "NIEZWERYFIKOWANE": 0.1},
+                "class_scores": {"POTWIERDZONE": 0.8, "ZAPRZECZONE": 0.1, "NIEZWERYFIKOWANE": 0.1, "WPROWADZAJĄCE W BŁĄD": 0.0},
                 "quote_ids": ["3.1", "2.1"],
             }
 
@@ -155,7 +160,7 @@ class VerificationPageTests(SimpleTestCase):
             {
                 "status": "resolved",
                 "label": "POTWIERDZONE",
-                "class_scores": {"POTWIERDZONE": 0.8, "ZAPRZECZONE": 0.1, "NIEZWERYFIKOWANE": 0.1},
+                "class_scores": {"POTWIERDZONE": 0.8, "ZAPRZECZONE": 0.1, "NIEZWERYFIKOWANE": 0.1, "WPROWADZAJĄCE W BŁĄD": 0.0},
                 "quote_ids": ["2.1"],
             },
             {"relation": "supports", "citations": {"2.1": "supports"}},
@@ -176,7 +181,8 @@ class VerificationPageTests(SimpleTestCase):
         self.assertContains(recovered, "Dokument 10, fragment 2.")
         self.assertContains(recovered, "Data publikacji nieznana.")
         self.assertContains(recovered, "Szacunki są nieskalibrowane.")
+        self.assertContains(recovered, "Siła dowodów: Umiarkowana")
         self.assertContains(recovered, "Dowód za.")
         self.assertContains(unverified, "<h3>Brak rozstrzygnięcia</h3>", html=True)
-        self.assertContains(unverified, "brakuje wystarczających dowodów")
+        self.assertContains(unverified, "Znalezione materiały nie dostarczyły cytatu")
         self.assertNotContains(unverified, "Dowody ze źródeł")

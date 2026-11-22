@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from threading import Lock
 
+from .audit import record_model
 from .models import EMBEDDING_SIZE
 
 MODEL = "Qwen/Qwen3-Embedding-0.6B"
@@ -32,6 +33,9 @@ def embed(texts, *, query=False):
 
     with _MODEL_LOCK:
         tokenizer, model = load_model()
+    if query:
+        record_model("embedding", os.getenv("QWEN_EMBEDDING_PATH", MODEL), "local",
+                     getattr(model.config, "_commit_hash", None))
     vectors = []
     for start in range(0, len(texts), 4):
         batch = texts[start:start + 4]

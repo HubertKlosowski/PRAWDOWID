@@ -24,3 +24,24 @@ class Chunk(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["document", "position"], name="unique_chunk_position")
         ]
+
+
+class VerificationSession(models.Model):
+    key_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+
+class VerificationRun(models.Model):
+    request_id = models.UUIDField(primary_key=True, editable=False)
+    session = models.ForeignKey(VerificationSession, on_delete=models.CASCADE, related_name="runs")
+    channel = models.CharField(max_length=8)
+    mode = models.CharField(max_length=4)
+    question = models.TextField()
+    created_at = models.DateTimeField(db_index=True)
+    status = models.CharField(max_length=24)
+    outcomes = models.JSONField(default=list)
+    elapsed_ms = models.PositiveIntegerField()
+    stages = models.JSONField(default=dict)
+    models_used = models.JSONField(default=dict)
+    estimated_cost = models.DecimalField(max_digits=12, decimal_places=6, null=True)
+    cost_method = models.CharField(max_length=24, default="unknown")

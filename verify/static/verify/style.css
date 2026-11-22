@@ -180,11 +180,14 @@ dd { margin: 2px 0 17px; color: #37534f; }
   animation: appear .3s ease-out both;
 }
 
-.result[data-verdict="true"] { --status-ink: #14563d; --status-bg: #e4f5e9; }
-.result[data-verdict="false"] { --status-ink: #8d292d; --status-bg: #fcebed; }
-.result[data-status="abstained"] { --status-ink: #704000; --status-bg: #fff2d6; }
-.result[data-status="needs_clarification"] { --status-ink: #1b4f83; --status-bg: #e7f2ff; }
-.result[data-status="technical_error"] { --status-ink: #623179; --status-bg: #f4eaf9; }
+.claim-result[data-verdict="misleading"] { --status-ink: #704000; --status-bg: #fff2d6; }
+.claim-result + .claim-result { margin-top: 24px; }
+
+.result[data-verdict="true"], .claim-result[data-verdict="true"] { --status-ink: #14563d; --status-bg: #e4f5e9; }
+.result[data-verdict="false"], .claim-result[data-verdict="false"] { --status-ink: #8d292d; --status-bg: #fcebed; }
+.result[data-status="abstained"], .claim-result[data-status="abstained"] { --status-ink: #704000; --status-bg: #fff2d6; }
+.result[data-status="needs_clarification"], .claim-result[data-status="needs_clarification"] { --status-ink: #1b4f83; --status-bg: #e7f2ff; }
+.result[data-status="technical_error"], .claim-result[data-status="technical_error"] { --status-ink: #623179; --status-bg: #f4eaf9; }
 
 .result-summary {
   padding: 16px clamp(16px, 2.5vw, 24px);

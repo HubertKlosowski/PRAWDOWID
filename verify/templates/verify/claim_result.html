@@ -1,0 +1,54 @@
+<section class="claim-result" data-status="{{ result.status }}"{% if result.verdict %} data-verdict="{{ result.verdict }}"{% endif %}>
+  {% if result.claim %}<blockquote>{{ result.claim }}</blockquote>{% endif %}
+  {% if result.claim_context %}<p>Kontekst zgłoszenia: {{ result.claim_context }}</p>{% endif %}
+  <div class="result-summary">
+    {% if result.status == "resolved" %}
+      <h3>{% if result.verdict == "true" %}Potwierdzone{% elif result.verdict == "false" %}Zaprzeczone{% else %}Wprowadzające w błąd{% endif %}</h3>
+      <p>{{ result.explanation }} <a href="#dowody{{ suffix }}">Zobacz dowody</a>.</p>
+    {% else %}
+      <h3>{% if result.status == "needs_clarification" %}Doprecyzuj zgłoszenie{% elif result.status == "out_of_scope" %}Poza zakresem weryfikacji{% elif result.status == "material_unavailable" %}Materiał niedostępny{% elif result.status == "technical_error" %}Błąd techniczny{% else %}Brak rozstrzygnięcia{% endif %}</h3>
+      <p>{{ result.explanation }}</p>
+    {% endif %}
+  </div>
+  {% if result.evidence_strength %}
+    <h4>Siła dowodów: {{ result.evidence_strength.label }}</h4>
+    <ul>{% for factor in result.evidence_strength.factors %}<li>{{ factor }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if result.class_scores %}
+    <h4>Szacunki modelu dla klas</h4>
+    <p>Szacunki są nieskalibrowane. Wiarygodność twierdzenia oceń na podstawie dowodów.</p>
+    <ul>{% for label,score in result.class_scores.items %}<li>{{ label|lower|capfirst }} <strong>{{ score|floatformat:2 }}</strong></li>{% endfor %}</ul>
+  {% endif %}
+  {% for warning in result.limitations %}<p><strong>Aktualność.</strong> {{ warning }}</p>{% endfor %}
+  {% if result.google_fact_check_unavailable %}
+    <p>Wyszukiwanie w Google Fact Check jest chwilowo niedostępne lub niepełne.</p>
+  {% endif %}
+  {% if result.evidence %}
+    <h4 id="dowody{{ suffix }}">Dowody ze źródeł</h4>
+    {% for e in result.evidence %}
+      <article>
+        <strong>{% if e.relation == 'supports' %}Za{% elif e.relation == 'contradicts' %}Przeciw{% elif e.relation == 'qualifies' %}Kontekst zmieniający sens{% else %}Kontekst{% endif %}</strong>
+        <blockquote>{{ e.quote }}</blockquote>
+        <a href="{{ e.url }}" rel="noopener noreferrer">{{ e.title }}</a>
+        <p>Dokument {{ e.document_id }}, fragment {{ e.position|add:1 }}. Data publikacji {{ e.published_at|default:"nieznana" }}. Pobrano {{ e.retrieved_at }}.</p>
+      </article>
+    {% endfor %}
+  {% endif %}
+  {% if result.fact_checks %}
+    <h4>Powiązane weryfikacje znalezione przez Google Fact Check</h4>
+    <p>Oceny pochodzą od wydawców. Pełne uzasadnienia są dostępne w ich artykułach.</p>
+    {% for review in result.fact_checks %}
+      <article>
+        <a href="{{ review.source_url }}" rel="noopener noreferrer">{{ review.review_title|default:review.source_url }}</a>
+        <p><strong>{{ review.publisher|default:review.publisher_site|default:"Wydawca" }}</strong> · Ocena {{ review.rating }}
+          {% if review.review_date %} · Data weryfikacji {{ review.review_date }}{% endif %}
+          {% if review.cited %} · Wykorzystano w ocenie modelu{% endif %}</p>
+        <blockquote>{{ review.claim }}</blockquote>
+        {% if review.claimant or review.claim_date %}
+          <p>{% if review.claimant %}Autor wypowiedzi {{ review.claimant }}{% endif %}
+          {% if review.claim_date %} · Data wypowiedzi {{ review.claim_date }}{% endif %}</p>
+        {% endif %}
+      </article>
+    {% endfor %}
+  {% endif %}
+</section>

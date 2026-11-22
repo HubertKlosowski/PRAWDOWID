@@ -3,14 +3,15 @@ from io import StringIO
 from unittest.mock import Mock, patch
 
 from django.core.management import call_command
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
-from .analysis import INTENT_PROMPT
 from .test_analysis import CHUNK, REPLY, REVIEW
 from .verification import verify
 
 
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="")
+@patch("verify.verification.extract_claims", new=lambda material, **kwargs: ([(" ".join(material.split()), None)], False))
+@override_settings(PRAWDOWID_AUDIT_ENABLED=False)
 class VerificationArchitectureTests(SimpleTestCase):
     @patch("torch.cuda.empty_cache")
     @patch("torch.cuda.is_initialized", return_value=True)
@@ -37,18 +38,17 @@ class VerificationArchitectureTests(SimpleTestCase):
         self.assertEqual(result["status"], "abstained")
         empty_cache.assert_not_called()
 
-    def test_clarification_is_checked_against_the_submission_without_source_context(self):
-        clarification = {"status": "needs_clarification", "label": None, "class_scores": None, "quote_ids": []}
-        for text, intent, expected in (
-            ("Czy we Włoszech ostatnio odbywał się strajk generalny?", "checkable", "abstained"),
-            ("Czy to prawda?", "needs_clarification", "needs_clarification"),
-        ):
-            with self.subTest(text=text):
-                complete = Mock(side_effect=[{"chunk_ids": []}, clarification, {"status": intent}])
+    def test_extracted_factual_claim_does_not_inherit_scope_error_from_model(self):
+        text = "Czy we Włoszech ostatnio odbywał się strajk generalny?"
+        for status in ("needs_clarification", "out_of_scope"):
+            with self.subTest(status=status):
+                rejection = {"status": status, "label": None, "class_scores": None, "quote_ids": []}
+                complete = Mock(side_effect=[{"chunk_ids": []}, rejection])
                 result = verify(text, search=lambda *_: [CHUNK], complete=complete)
-                self.assertEqual(result["status"], expected)
+                self.assertEqual(result["status"], "abstained")
+                self.assertEqual(result["reason_code"], "no_confirmed_citations")
                 self.assertIsNone(result["verdict"])
-                self.assertEqual(complete.call_args.args, (INTENT_PROMPT, {"material": text}))
+                self.assertEqual(complete.call_count, 2)
 
     def test_switching_provider_configuration_preserves_result_contract(self):
         replies = [{"chunk_ids": ["42"]}, REPLY, REVIEW]

@@ -22,6 +22,7 @@ OLD = {
 
 
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="")
+@patch("verify.verification.extract_claims", new=lambda material, **kwargs: ([(" ".join(material.split()), None)], False))
 class TemporalVerificationTests(SimpleTestCase):
     @patch("verify.verification.timezone.localtime", return_value=NOW)
     def test_recent_retrieval_does_not_make_expired_alert_current(self, clock):
@@ -30,6 +31,7 @@ class TemporalVerificationTests(SimpleTestCase):
                         search=lambda text, limit: [OLD], complete=complete)
         self.assertEqual(result["status"], "abstained")
         self.assertIsNone(result["verdict"])
+        self.assertEqual(result["reason_code"], "period_mismatch")
         self.assertIn("archiwalna", result["limitations"][0])
         complete.assert_not_called()
 

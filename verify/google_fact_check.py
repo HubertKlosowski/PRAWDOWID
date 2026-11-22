@@ -11,6 +11,7 @@ from urllib.request import Request, build_opener
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 
+from .privacy import mask_text
 from .providers import NoRedirect
 
 ENDPOINT = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
@@ -130,7 +131,7 @@ def search_query(text, language_code):
 
 
 def search(query, *, api_key, language_code="pl"):
-    params = {"key": api_key, "query": query, "pageSize": PAGE_SIZE}
+    params = {"key": api_key, "query": mask_text(query), "pageSize": PAGE_SIZE}
     if language_code:
         params["languageCode"] = language_code
     try:

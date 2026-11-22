@@ -16,7 +16,7 @@ CHUNK = {
 REPLY = {
     "status": "resolved",
     "label": "POTWIERDZONE",
-    "class_scores": {"POTWIERDZONE": 0.8, "ZAPRZECZONE": 0.1, "NIEZWERYFIKOWANE": 0.1},
+    "class_scores": {"POTWIERDZONE": 0.8, "ZAPRZECZONE": 0.1, "NIEZWERYFIKOWANE": 0.1, "WPROWADZAJĄCE W BŁĄD": 0.0},
     "quote_ids": ["42.1"],
 }
 REVIEW = {"relation": "supports", "citations": {"42.1": "supports"}}
@@ -83,7 +83,7 @@ class AnalysisTests(TestCase):
         prediction = {
             **REPLY,
             "label": "ZAPRZECZONE",
-            "class_scores": {"POTWIERDZONE": 0.1, "ZAPRZECZONE": 0.8, "NIEZWERYFIKOWANE": 0.1},
+            "class_scores": {"POTWIERDZONE": 0.1, "ZAPRZECZONE": 0.8, "NIEZWERYFIKOWANE": 0.1, "WPROWADZAJĄCE W BŁĄD": 0.0},
         }
         review = {"relation": "contradicts", "citations": {"42.1": "contradicts"}}
         with patch("verify.analysis._request_completion", side_effect=[prediction, review]):

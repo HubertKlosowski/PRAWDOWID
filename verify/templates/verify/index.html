@@ -11,6 +11,13 @@
 {{ form.errors }}
 <button type="submit">Sprawdź informację</button>
 </form>
+{% if history_deleted %}<p role="status">Historia sesji została usunięta.</p>{% endif %}
+{% if has_history_session %}
+<form method="post" action="{% url 'delete_history' %}">
+  {% csrf_token %}
+  <button type="submit">Usuń historię tej sesji</button>
+</form>
+{% endif %}
 <div id="progress" class="progress" hidden>
   <div class="progress-heading">
     <span class="spinner" aria-hidden="true"></span>
@@ -35,8 +42,12 @@
       <dd>Cytaty ze źródeł bezpośrednio wspierają twierdzenie.</dd>
       <dt>Zaprzeczone</dt>
       <dd>Cytaty ze źródeł bezpośrednio podważają twierdzenie.</dd>
+      <dt>Wprowadzające w błąd</dt>
+      <dd>Źródła potwierdzają część tezy i ujawniają pominięty kontekst, który zmienia jej sens.</dd>
       <dt>Brak rozstrzygnięcia</dt>
-      <dd>Dowodów brakuje, są niewystarczające lub sprzeczne. Ten wynik może się też pojawić, gdy artykuł jest niedostępny lub zbyt długi.</dd>
+      <dd>Dowodów brakuje, są niewystarczające lub sprzeczne.</dd>
+      <dt>Materiał niedostępny</dt>
+      <dd>Strony nie udało się odczytać, jest w nieobsługiwanym formacie lub jest za długa. Możesz wkleić tekst.</dd>
       <dt>Doprecyzuj zgłoszenie</dt>
       <dd>Podaj informację lub pytanie, które chcesz sprawdzić. Jeśli odwołujesz się do innej treści, dołącz ją do zgłoszenia.</dd>
       <dt>Poza zakresem weryfikacji</dt>
@@ -50,51 +61,14 @@
 {% if result %}
 <section class="card result" id="wynik" tabindex="-1" data-status="{{ result.status }}"{% if result.status == "resolved" %} data-verdict="{{ result.verdict }}"{% endif %}>
   <h2>Wynik weryfikacji</h2>
-  <div class="result-summary">
-    {% if result.status == "resolved" %}
-      <h3>{% if result.verdict == "true" %}Potwierdzone{% else %}Zaprzeczone{% endif %}</h3>
-      <p>{{ result.explanation }} <a href="#dowody">Zobacz dowody</a>.</p>
-    {% else %}
-      <h3>{% if result.status == "needs_clarification" %}Doprecyzuj zgłoszenie{% elif result.status == "out_of_scope" %}Poza zakresem weryfikacji{% elif result.status == "technical_error" %}Błąd techniczny{% else %}Brak rozstrzygnięcia{% endif %}</h3>
-      <p>{{ result.explanation }}</p>
-    {% endif %}
-  </div>
-  {% if result.class_scores %}
-    <h4>Szacunki modelu dla klas</h4>
-    <p>Szacunki są nieskalibrowane. Wiarygodność twierdzenia oceń na podstawie dowodów.</p>
-    <ul>{% for label,score in result.class_scores.items %}<li>{{ label|lower|capfirst }} <strong>{{ score|floatformat:2 }}</strong></li>{% endfor %}</ul>
-  {% endif %}
-  {% for warning in result.limitations %}<p><strong>Aktualność.</strong> {{ warning }}</p>{% endfor %}
-  {% if result.google_fact_check_unavailable %}
-    <p>Wyszukiwanie w Google Fact Check jest chwilowo niedostępne lub niepełne.</p>
-  {% endif %}
-  {% if result.evidence %}
-    <h4 id="dowody">Dowody ze źródeł</h4>
-    {% for e in result.evidence %}
-      <article>
-        <strong>{% if e.relation == 'supports' %}Za{% elif e.relation == 'contradicts' %}Przeciw{% else %}Kontekst{% endif %}</strong>
-        <blockquote>{{ e.quote }}</blockquote>
-        <a href="{{ e.url }}" rel="noopener noreferrer">{{ e.title }}</a>
-        <p>Dokument {{ e.document_id }}, fragment {{ e.position|add:1 }}. Data publikacji {{ e.published_at|default:"nieznana" }}. Pobrano {{ e.retrieved_at }}.</p>
-      </article>
+  {% if result.audit_unavailable %}<p>Zapis przebiegu weryfikacji jest niedostępny.</p>{% endif %}
+  {% if result.claims %}
+    {% if result.claims_truncated %}<p>Pokazujemy najwyżej cztery tezy. Pozostałe możesz sprawdzić w osobnym zgłoszeniu.</p>{% endif %}
+    {% for claim_result in result.claims %}
+      {% include "verify/claim_result.html" with result=claim_result suffix=forloop.counter only %}
     {% endfor %}
-  {% endif %}
-  {% if result.fact_checks %}
-    <h4>Powiązane weryfikacje znalezione przez Google Fact Check</h4>
-    <p>Oceny pochodzą od wydawców. Pełne uzasadnienia są dostępne w ich artykułach.</p>
-    {% for review in result.fact_checks %}
-      <article>
-        <a href="{{ review.source_url }}" rel="noopener noreferrer">{{ review.review_title|default:review.source_url }}</a>
-        <p><strong>{{ review.publisher|default:review.publisher_site|default:"Wydawca" }}</strong> · Ocena {{ review.rating }}
-          {% if review.review_date %} · Data weryfikacji {{ review.review_date }}{% endif %}
-          {% if review.cited %} · Wykorzystano w ocenie modelu{% endif %}</p>
-        <blockquote>{{ review.claim }}</blockquote>
-        {% if review.claimant or review.claim_date %}
-          <p>{% if review.claimant %}Autor wypowiedzi {{ review.claimant }}{% endif %}
-          {% if review.claim_date %} · Data wypowiedzi {{ review.claim_date }}{% endif %}</p>
-        {% endif %}
-      </article>
-    {% endfor %}
+  {% else %}
+    {% include "verify/claim_result.html" with result=result suffix="" only %}
   {% endif %}
 </section>
 {% endif %}</div></main>
