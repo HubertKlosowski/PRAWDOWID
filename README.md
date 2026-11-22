@@ -62,7 +62,7 @@ Przy aktualizacji z 4B migracja zachowuje dokumenty i teksty fragmentów, a usuw
 
 Domyślnie oba modele działają w procesie aplikacji i są ładowane przy pierwszym użyciu. Wymagają pamięci na oba zestawy wag. Na CPU czas odpowiedzi może być długi. Przy gotowym cache można ustawić HF_HUB_OFFLINE=1, a na CPU ograniczyć liczbę wątków przez OMP_NUM_THREADS.
 
-Do pokazu użyj `./run-demo.sh`. Skrypt uruchamia `manage.py serve_demo --noreload`, który ładuje modele raz, przed przyjęciem pierwszego żądania. Jeśli skonfigurowano endpoint oceniający przez `PRAWDOWID_LLM_URL`, serwer ładuje lokalnie tylko model embeddingowy. Możesz wymusić pracę na CPU poleceniem `QWEN_DEVICE=cpu PRAWDOWID_LLM_DEVICE=cpu ./run-demo.sh`.
+Do pokazu użyj `./run-demo.sh`. Skrypt uruchamia `manage.py serve_demo --noreload`, który ładuje modele raz, przed przyjęciem pierwszego żądania. Jeśli skonfigurowano endpoint oceniający przez `PRAWDOWID_LLM_URL`, serwer ładuje lokalnie tylko model embeddingowy.
 
 Na CPU z AVX-512 BF16 i obsługą oneDNN lokalny Qwen3.5 z wagami BF16 przygotowuje wagi warstw liniowych dekodera podczas ładowania. Kolejne kroki generowania korzystają z gotowego układu wag. Aby porównać czasy na własnym procesorze, uruchom osobny proces z `PRAWDOWID_CPU_PREPACK=0` i sprawdź te same pytania po załadowaniu modelu.
 
@@ -99,6 +99,30 @@ Testy jednostkowe korzystają z atrap inferencji i połączeń sieciowych. Formu
 Aplikacja zwraca `resolved` z werdyktem i klikalnymi cytatami albo jeden ze statusów bez werdyktu. `abstained` oznacza niewystarczające lub sprzeczne dowody. `material_unavailable` oznacza niedostępny lub nieczytelny artykuł albo przekroczenie limitu długości pobranego tekstu. `needs_clarification` prosi o doprecyzowanie tezy. `out_of_scope` dotyczy zadań innych niż sprawdzanie twierdzeń faktograficznych. `technical_error` oznacza awarię wyszukiwania lub brak poprawnej odpowiedzi modelu.
 
 Po filtrowaniu i uporządkowaniu kandydatów według zgodności z okresem tezy aplikacja przekazuje do oceny najwyżej sklasyfikowane fragmenty z pgvector. Model ocenia tezę i wybiera identyfikatory gotowych cytatów w jednym wywołaniu. Druga ocena sprawdza związek cytatów z całą tezą bez dostępu do proponowanego werdyktu. Rozstrzygnięcie wymaga zgodności obu ocen. Przy sprzecznych relacjach aplikacja wstrzymuje rozstrzygnięcie. Cytaty, ich metadane i tekst objaśnienia pochodzą z aplikacji.
+
+### Pomiar czasu odpowiedzi w przeglądarce
+
+Uruchom oba modele lokalnie na CPU.
+
+```bash
+QWEN_DEVICE=cpu PRAWDOWID_LLM_DEVICE=cpu \
+  PRAWDOWID_LLM_URL= GOOGLE_FACTCHECK_API_KEY= ./run-demo.sh
+```
+
+Żeby porównać wyniki, zatrzymaj serwer i uruchom go ponownie z modelem
+embeddingowym na CPU i modelem oceniającym na pierwszej karcie CUDA.
+
+```bash
+QWEN_DEVICE=cpu PRAWDOWID_LLM_DEVICE=cuda:0 \
+  PRAWDOWID_LLM_URL= GOOGLE_FACTCHECK_API_KEY= ./run-demo.sh
+```
+
+Oba polecenia wyłączają zewnętrzny endpoint LLM i Google Fact Check na czas
+pomiaru. W każdej konfiguracji otwórz `http://127.0.0.1:8000`, wklej tę samą
+tezę, np. „Regionalny System Ostrzegania jest darmowy.”, i kliknij
+**Sprawdź informację**. Odczytaj **Czas weryfikacji** nad formularzem
+i porównaj mediany z trzech prób. Czas widziany przez przeglądarkę możesz
+odczytać w karcie **Sieć** narzędzi deweloperskich przy żądaniu `POST /`.
 
 ### Próba spójności kanałów
 
