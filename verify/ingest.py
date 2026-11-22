@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from django.db import transaction
 
+from .corpus import default_domain
 from .embeddings import embed
 from .models import Chunk, Document
 from .temporal import DATE_FIELDS, local_datetime, source_date
@@ -30,7 +31,7 @@ def chunk_text(text, size=1200, overlap=160):
                 start = boundary + 1
 
 
-def index_document(url, title, text, fetched_at, *, published_at=None, valid_from=None, valid_to=None):
+def index_document(url, title, text, fetched_at, *, published_at=None, valid_from=None, valid_to=None, original_url=None):
     chunks = list(chunk_text(text))
     if not chunks:
         raise ValueError("Pusty dokument.")
@@ -38,7 +39,10 @@ def index_document(url, title, text, fetched_at, *, published_at=None, valid_fro
     dates = dict(published_at=published_at, valid_from=valid_from, valid_to=valid_to)
     with transaction.atomic():
         document, created = Document.objects.select_for_update().get_or_create(
-            url=url, defaults={"title": title, "fetched_at": fetched_at, "content_hash": digest})
+            url=url, defaults={
+                "title": title, "fetched_at": fetched_at, "content_hash": digest,
+                "original_url": original_url or url, "source_domain": default_domain(url),
+            })
         if not created and fetched_at < document.fetched_at:
             # An older snapshot can fill missing dates for identical content.
             if digest == document.content_hash:
@@ -63,7 +67,9 @@ def index_document(url, title, text, fetched_at, *, published_at=None, valid_fro
         for field, value in dates.items():
             if value is not None or digest != previous_digest:
                 setattr(document, field, value)
-        document.save(update_fields=["title", "content_hash", "fetched_at", *DATE_FIELDS])
+        document.original_url = document.original_url or original_url or url
+        document.source_domain = document.source_domain or default_domain(url)
+        document.save(update_fields=["title", "content_hash", "fetched_at", "original_url", "source_domain", *DATE_FIELDS])
 
 
 def snapshot_documents(directory):

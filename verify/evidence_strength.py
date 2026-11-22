@@ -20,6 +20,8 @@ SOURCE_TYPES = {
 
 
 def _source_host(item):
+    if domain := item.get("source_domain"):
+        return domain
     host = (urlsplit(item["url"]).hostname or "").lower().rstrip(".").removeprefix("www.")
     return "gov.pl" if host == "gov.pl" or host.endswith(".gov.pl") else host
 
@@ -28,7 +30,8 @@ def _source_type(item):
     declared = item.get("source_type")
     if declared in SOURCE_TYPES and declared != "unknown":
         return declared
-    return "official" if _source_host(item) == "gov.pl" else "unknown"
+    host = _source_host(item)
+    return "official" if host == "gov.pl" or host.endswith(".gov.pl") else "unknown"
 
 
 def _source_groups(items):

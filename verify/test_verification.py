@@ -11,7 +11,7 @@ from .verification import verify
 
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="")
 @patch("verify.verification.extract_claims", new=lambda material, **kwargs: ([(" ".join(material.split()), None)], False))
-@override_settings(PRAWDOWID_AUDIT_ENABLED=False)
+@override_settings(PRAWDOWID_AUDIT_ENABLED=False, PRAWDOWID_RATE_LIMIT_ENABLED=False)
 class VerificationArchitectureTests(SimpleTestCase):
     @patch("torch.cuda.empty_cache")
     @patch("torch.cuda.is_initialized", return_value=True)

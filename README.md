@@ -4,20 +4,57 @@ Aplikacja Django porównuje tekst lub artykuł z korpusem instytucjonalnym. Qwen
 
 ## Uruchomienie lokalne
 
-Potrzebne są Python 3.12, uv oraz działający PostgreSQL z zainstalowanym rozszerzeniem serwerowym pgvector. Utwórz bazę prawdowid dla swojego użytkownika PostgreSQL. Migracja tworzy rozszerzenie vector, co wymaga odpowiednich uprawnień lub wcześniejszego utworzenia go przez administratora. Połączenie korzysta ze standardowych zmiennych PGHOST, PGPORT, PGUSER, PGPASSWORD i PGDATABASE.
+Po sklonowaniu repozytorium uruchom z jego katalogu `./run-demo.sh` jako zwykły
+użytkownik Linuksa. Potrzebne są Bash, `flock`, uv i Python 3.12 oraz narzędzia
+lokalnego PostgreSQL (`pg_config`, `initdb`, `pg_ctl`, `pg_isready`, `psql`,
+`createdb`, `pg_restore`). Użyj klienta PostgreSQL 18 do odczytu dołączonego
+zrzutu i pgvector zainstalowanego dla wersji używanego serwera.
+
+Skrypt przygotowuje środowisko z `uv.lock`, lokalny klaster, migracje i korpus.
+Potem ładuje modele i udostępnia formularz pod http://127.0.0.1:8000/.
+Pierwsze uruchomienie wymaga pobrania zależności i wag modeli, jeśli nie są
+w cache. W formularzu wpisz „Regionalny System Ostrzegania jest darmowy.”
+i sprawdź, czy wynik zawiera cytat oraz link do źródła MSWiA.
+
+`./run-demo.sh --prepare` kończy po utworzeniu bazy i audycie korpusu.
+Domyślnie używa katalogu `/tmp/prawdowid-pg`. Jeśli sprawdzasz start od zera
+na tej samej maszynie, wskaż osobny pusty katalog przez
+`PRAWDOWID_DEMO_PG_ROOT`. Adres WWW można ustawić w `PRAWDOWID_DEMO_BIND`.
+
+Jeśli skrypt kończy się wcześniej, jego komunikat wskazuje etap. Przy błędzie
+PostgreSQL sprawdź `server.log` w katalogu klastra. Przy komunikacie o braku
+pgvector doinstaluj rozszerzenie dla wersji serwera. Przy błędzie ładowania
+modelu sprawdź dostępność wag i pamięć urządzenia, a na komputerze bez GPU
+możesz wymusić `QWEN_DEVICE=cpu PRAWDOWID_LLM_DEVICE=cpu`.
+
+Dla samodzielnie zarządzanej instancji utwórz pustą bazę `prawdowid` dla swojego
+użytkownika PostgreSQL i ustaw parametry połączenia `PGHOST`, `PGPORT`, `PGUSER`
+i `PGDATABASE` odpowiednio do środowiska. Migracja tworzy rozszerzenie vector,
+co wymaga odpowiednich uprawnień lub wcześniejszego utworzenia go przez administratora.
+Import wymaga narzędzia `pg_restore` obsługującego dołączony zrzut.
 
 ```bash
-uv sync
+uv sync --locked
 uv run python manage.py migrate
+uv run python manage.py load_demo_corpus
+uv run python manage.py audit_corpus --check --csv audyt-demo.csv
 uv run hf download Qwen/Qwen3.5-4B
 uv run hf download Qwen/Qwen3-Embedding-0.6B
-uv run python manage.py ingest_sources --snapshot data/2026-11-21
 uv run python manage.py runserver
 ```
 
-Otwórz http://127.0.0.1:8000/. Dla dołączonej migawki przykładowe twierdzenie brzmi „Regionalny System Ostrzegania jest darmowy”. Migawka zawiera również komunikaty ograniczone czasowo. Data pobrania opisuje stan korpusu.
+Otwórz http://127.0.0.1:8000/. Przykładowe twierdzenie brzmi „Regionalny System
+Ostrzegania jest darmowy”. Import wykorzystuje `prawdowid-demo-2026-11-21.dump`
+i [katalog metadanych](corpus/demo-sources.csv). Dodaje brakujące dokumenty
+i uzupełnia zgodne dane bez ponownego pobierania stron ani liczenia embeddingów.
+Zachowuje istniejącą treść dokumentów i uzupełnia wektory, gdy zgadza się wersja
+treści i podział na fragmenty.
 
-Korpus możesz też zbudować przez `uv run python manage.py ingest_sources --sources sources.txt`. Podaj po jednym adresie statycznego dokumentu w wierszu. Komenda respektuje robots.txt i zgłasza błędy pobrania. Import migawki odczytuje istniejące lokalne rekordy, w tym dane z widoków dynamicznych. Powtórzenie importu aktualizuje dokumenty po URL i skrócie treści.
+Dodatkowe źródła możesz zaindeksować poleceniem
+`uv run python manage.py ingest_sources --sources sources.txt`. Podaj po jednym
+adresie statycznego dokumentu w wierszu. Komenda respektuje robots.txt i zgłasza
+błędy pobrania. Polecenie `ingest_sources --snapshot KATALOG` służy do importu
+własnej migawki Parquet. Pełny korpus demonstracyjny jest w dołączonym zrzucie.
 
 Przy aktualizacji z 4B migracja zachowuje dokumenty i teksty fragmentów, a usuwa stare wektory. Po migracji i pobraniu modelu uruchom `uv run python manage.py reembed_chunks`, aby przeliczyć zapisane fragmenty bez ponownego pobierania źródeł. Wyszukiwanie uwzględnia fragmenty w miarę uzupełniania ich embeddingów.
 
@@ -63,6 +100,34 @@ Aplikacja zwraca `resolved` z werdyktem i klikalnymi cytatami albo jeden ze stat
 
 Model wybiera identyfikatory gotowych cytatów. Druga ocena sprawdza ich związek z całą tezą bez dostępu do proponowanego werdyktu. Rozstrzygnięcie wymaga zgodności obu ocen. Przy sprzecznych relacjach aplikacja wstrzymuje rozstrzygnięcie. Cytaty, ich metadane i tekst objaśnienia pochodzą z aplikacji. Ocena związku cytatu z tezą zależy od modelu. Po pustej selekcji fragmentów ocena korzysta z najbliższych wyników pgvector, do limitu RAG_TOP_K.
 
+### Próba spójności kanałów
+
+Po przygotowaniu domyślnej bazy uruchom test akceptacyjny:
+
+```bash
+PGHOST=/tmp/prawdowid-pg PGPORT=5432 uv run --locked --extra discord \
+  python manage.py test verify.test_demo_channels
+```
+
+Test tworzy osobną bazę PostgreSQL, odtwarza korpus i porównuje tekst i URL w WWW
+oraz CLI. Sprawdza wynik każdej tezy, kod braku rozstrzygnięcia, identyfikatory
+dokumentów, fragmentów i cytatów oraz linki w HTML. Osobna próba wykonuje
+callback `/sprawdz` z rzeczywistą usługą weryfikacji i sprawdza odpowiedź
+oraz zapis przebiegu. Automatyczny zestaw używa atrap inferencji i transportu
+sieciowego.
+
+Po pobraniu modeli można włączyć próbę WWW–CLI z rzeczywistą inferencją:
+
+```bash
+PRAWDOWID_LIVE_CHANNEL_TESTS=1 PGHOST=/tmp/prawdowid-pg PGPORT=5432 \
+  uv run --locked python manage.py test verify.test_demo_channels.LiveDemoChannelsTests
+```
+
+Dołącz `PRAWDOWID_DEMO_TEST_URL` z publicznym adresem krótkiego artykułu HTML,
+jeżeli chcesz wykonać również rzeczywiste pobranie URL. Próba porównuje oba
+kanały przy tym samym skonfigurowanym modelu, z wyłączonym Google Fact Check.
+Na CPU może potrwać kilka minut.
+
 ## Google Fact Check Tools API
 
 Integracja jest opcjonalna. Ustaw `GOOGLE_FACTCHECK_API_KEY` w środowisku procesu lub w lokalnym `.env`. Skrypt `run-demo.sh` korzysta z `.env`, jeśli plik istnieje. Przy ręcznym uruchomieniu serwera lub komendy dodaj `uv run --env-file .env`.
@@ -78,9 +143,28 @@ uv run python manage.py verify_claim --url "https://example.org/artykul"
 
 Komenda zwraca wynik w JSON-ie i wywołuje tę samą usługę `verify(...)` co formularz WWW. Usługa przyjmuje opcjonalne adaptery `complete(system_prompt, data)` i `search(text, limit)`. Domyślny adapter modelu korzysta z konfiguracji opisanej wyżej, a domyślny adapter wyszukiwania zwraca uporządkowane fragmenty z pgvector wraz z metadanymi źródeł.
 
-## Aktualność źródeł
+## Katalog, audyt i aktualność źródeł
 
-Uruchom `uv run python manage.py migrate`, a następnie ponów import migawki lub skonfigurowanych stron, aby uzupełnić metadane istniejących dokumentów. Datę publikacji zapisujemy wtedy, gdy pochodzi z migawki lub jawnych metadanych HTML. Czas pobrania jest przechowywany w dotychczasowym polu bazy `fetched_at` i jest dostępny jako `retrieved_at` w wyniku weryfikacji. Zgrupowane rekordy migawki mają metadane wspólne dla całego dokumentu, jeśli rekordy są zgodne. Daty przypisane do poszczególnych rekordów pozostają również w ich treści.
+Pełny pakiet demonstracyjny ma 435 dokumentów i 543 fragmenty z embeddingami.
+Katalog przypisuje dokumenty do 10 domen wydawców i 8 rodzajów materiału.
+Obejmuje źródła urzędowe, pierwotne i wtórne. Domena w katalogu grupuje
+subdomeny należące do tego samego wydawcy. Pole `source_type` określa charakter
+źródła, a `kind` rodzaj materiału, np. pomiar, komunikat lub analiza redakcyjna.
+
+`audit_corpus` raportuje stan aktywnej bazy. Do minimów wlicza dokumenty mające
+embeddingi wszystkich fragmentów i liczy identyczne skróty treści tylko raz.
+Opcja `--csv` eksportuje także rekordy niepełne, z identyfikatorem dokumentu,
+adresem, domeną, wydawcą, metadanymi dat i statusem indeksowania. Z opcją
+`--check` komenda kończy się błędem, jeśli baza nie spełnia minimów.
+
+Do demonstratora przeniesiono okresy ważności z katalogu migawki. Publikację
+uzupełniono tam, gdzie data jest widoczna w zachowanym materiale lub pochodzi
+z pola daty raportu w migawce. Daty utworzenia pomiaru i pobrania dokumentu
+mają odrębne znaczenie. Dowody w WWW, CLI i Discordzie zawierają wydawcę oraz
+daty, jeśli są znane. Czas pobrania jest przechowywany jako `fetched_at` i zwracany
+w wyniku jako `retrieved_at`. Przy nowszej wersji materiału katalog służy do
+uzupełnienia danych wydawcy i rodzaju źródła, a daty pozostają związane z wersją
+treści.
 
 Wśród wyników pgvector pierwszeństwo mają źródła pasujące do okresu tezy. Przedziały ważności poza tym okresem są odrzucane. Dla pytań o stan bieżący bez przedziału ważności wymagamy publikacji lub początku ważności z bieżącego dnia i model nadal ocenia treść. Rozpoznawanie okresu w kodzie obejmuje typowe daty, lata i proste określenia względne. Pozostałe sformułowania interpretuje model. Daty bez strefy czasowej z polskiej migawki są interpretowane w strefie `Europe/Warsaw`.
 
@@ -90,7 +174,7 @@ Adapter korzysta z Discord Gateway. Komputer z demonstratorem potrzebuje połąc
 
 1. W [Discord Developer Portal](https://discord.com/developers/applications) utwórz osobną aplikację dla PRAWDOWID. W zakładce **Bot** wygeneruj token. W zakładce **Installation** skonfiguruj **Guild Install** z zakresami `bot` i `applications.commands`, następnie przez link instalacyjny dodaj aplikację na swój serwer demonstracyjny. Wystarczą zwykłe uprawnienia do kanału, wysyłania wiadomości i załączania plików.
 2. W Discordzie włącz tryb dewelopera i skopiuj identyfikator serwera. W lokalnym pliku `.env` ustaw `DISCORD_BOT_TOKEN` i `DISCORD_GUILD_ID`. Token zachowaj w tajemnicy.
-3. Dla lokalnej bazy demonstracyjnej uruchom poniższy skrypt. Korzysta z tego samego katalogu bazy co `run-demo.sh` (`/tmp/prawdowid-pg/db`), wczytuje `.env` i uruchamia bota. Baza z korpusem powinna być już przygotowana.
+3. Dla lokalnej bazy demonstracyjnej uruchom poniższy skrypt. Korzysta z tego samego katalogu bazy co `run-demo.sh` (`/tmp/prawdowid-pg/db`), przygotowuje korpus, wczytuje `.env` i uruchamia bota.
 
    ```bash
    ./run-discord-demo.sh
@@ -175,3 +259,32 @@ wyszukiwanie w korpusie wraz z embeddingiem, model oceniający oraz opcjonalne
 zapytania Google. Rewizja lokalnego modelu jest zapisywana, gdy jest dostępna
 w metadanych. Koszt jest oznaczany jako `unknown`, ponieważ aplikacja nie ma danych
 rozliczeniowych dostawców ani pomiaru kosztu lokalnej inferencji.
+
+## Limity i zdarzenia bezpieczeństwa
+
+WWW i `/sprawdz` przyjmują do **5 zgłoszeń do analizy w ruchomym oknie 10 minut**.
+WWW stosuje limit dla sesji i adresu IP połączenia, a Discord dla użytkownika
+na serwerze demonstracyjnym. Wspólny adres IP oznacza wspólny limit dodatkowy.
+WWW odpowiada `429` z nagłówkiem `Retry-After`, a Discord wysyła prywatny komunikat.
+Limit jest sprawdzany przed pobraniem treści i wywołaniem modelu. CLI pozostaje
+kanałem lokalnym.
+
+Licznik WWW używa pseudonimu HMAC adresu `REMOTE_ADDR`. Przy wielu procesach
+WWW ustaw wspólne, stałe `DJANGO_SECRET_KEY`. Nagłówki przekazywane przez klienta
+nie zmieniają adresu użytego do limitu. Za reverse proxy limit IP dotyczy
+adresu proxy, o ile serwer aplikacji nie przekazuje wiarygodnego adresu klienta
+w `REMOTE_ADDR`.
+
+Rejestr `SecurityEvent` zawiera czas, kanał, kod i identyfikator analizy, gdy jest
+dostępny. Obejmuje przekroczenia limitu, blokady URL oraz nieprawidłowe odpowiedzi
+modelu. Przekroczenia tego samego limitu są rejestrowane najwyżej raz w oknie.
+Zdarzenie modelowe oznacza problem z walidacją. Próby prompt injection ocenia się
+osobno w testach. Rejestr pomija treść zgłoszenia, pełny URL i surowe IP.
+`prune_verification_history` usuwa wygasłe liczniki i zdarzenia zgodnie z retencją.
+
+Po migracji możesz odczytać najnowsze zdarzenia z aktywnej bazy:
+
+```bash
+PGHOST=/tmp/prawdowid-pg PGDATABASE=prawdowid uv run python manage.py shell -c \
+  'from verify.models import SecurityEvent; print(list(SecurityEvent.objects.order_by("-created_at").values_list("created_at", "channel", "code", "request_id")[:10]))'
+```

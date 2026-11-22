@@ -12,7 +12,7 @@ ABSTENTION = {"status": "abstained", "label": None, "class_scores": None, "quote
 
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="")
 @patch("verify.verification.extract_claims", new=lambda material, **kwargs: ([(" ".join(material.split()), None)], False))
-@override_settings(PRAWDOWID_AUDIT_ENABLED=False)
+@override_settings(PRAWDOWID_AUDIT_ENABLED=False, PRAWDOWID_RATE_LIMIT_ENABLED=False)
 class VerificationPageTests(SimpleTestCase):
     def test_form_available(self):
         response = self.client.get("/")
@@ -111,6 +111,7 @@ class VerificationPageTests(SimpleTestCase):
             title="Komunikat",
             fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
             published_at=None, valid_from=None, valid_to=None,
+            original_url="", source_domain="", source_type="official", source_kind="komunikat", publisher="Testowy urząd",
         )
         texts = ["Fragment na podobny temat.", "Dowód za.", "Dowód przeciw."]
         rows = [
@@ -180,6 +181,7 @@ class VerificationPageTests(SimpleTestCase):
         self.assertContains(recovered, f'<a href="{document.url}" rel="noopener noreferrer">{document.title}</a>', html=True)
         self.assertContains(recovered, "Dokument 10, fragment 2.")
         self.assertContains(recovered, "Data publikacji nieznana.")
+        self.assertContains(recovered, "Testowy urząd")
         self.assertContains(recovered, "Szacunki są nieskalibrowane.")
         self.assertContains(recovered, "Siła dowodów: Umiarkowana")
         self.assertContains(recovered, "Dowód za.")

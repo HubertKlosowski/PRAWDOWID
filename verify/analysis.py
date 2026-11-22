@@ -6,6 +6,8 @@ import textwrap
 from dataclasses import asdict
 from http.client import HTTPException
 
+from .audit import record_security_event
+from .corpus import SOURCE_FIELDS
 from .providers import request_completion as _request_completion
 from .temporal import DATE_FIELDS
 
@@ -379,7 +381,7 @@ def _review_evidence(text, citations, chunks, complete, period):
             "published_at": chunk.get("published_at"),
             "position": chunk["position"],
             "url": chunk["url"],
-            **{key: chunk[key] for key in ("source_type", "publisher") if key in chunk},
+            **{key: chunk[key] for key in SOURCE_FIELDS if key in chunk},
             "relation": relations[item["id"]],
         })
     return review["relation"], evidence
@@ -464,7 +466,9 @@ def assess(text, chunks, *, fact_checks=(), checkable=False, complete=None, peri
         KeyError,
         IndexError,
         RecursionError,
-    ):
+    ) as exc:
+        if isinstance(exc, (ValueError, TypeError, KeyError, IndexError)):
+            record_security_event("invalid_model_response")
         return unresolved(
             "technical_error",
             "Nie udało się uzyskać poprawnej oceny modelu. Spróbuj ponownie później.",

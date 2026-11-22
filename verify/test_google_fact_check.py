@@ -135,7 +135,7 @@ class GoogleFactCheckClientTests(SimpleTestCase):
 
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY=API_KEY)
 @patch("verify.verification.extract_claims", new=lambda material, **kwargs: ([(" ".join(material.split()), None)], False))
-@override_settings(PRAWDOWID_AUDIT_ENABLED=False)
+@override_settings(PRAWDOWID_AUDIT_ENABLED=False, PRAWDOWID_RATE_LIMIT_ENABLED=False)
 class GoogleFactCheckWorkflowTests(SimpleTestCase):
     def test_web_sends_filtered_reviews_and_corpus_in_real_qwen_request(self):
         candidates = [MATCH_RECORD, {

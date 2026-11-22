@@ -18,7 +18,7 @@ SECOND_CHUNK = {**CHUNK, "id": "43", "document_id": 11, "url": "https://example.
 
 
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="")
-@override_settings(PRAWDOWID_AUDIT_ENABLED=False)
+@override_settings(PRAWDOWID_AUDIT_ENABLED=False, PRAWDOWID_RATE_LIMIT_ENABLED=False)
 class ClaimsTests(SimpleTestCase):
     def test_web_url_and_cli_keep_each_verdict_with_its_evidence(self):
         def complete(prompt, data):

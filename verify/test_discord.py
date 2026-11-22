@@ -19,9 +19,11 @@ class DiscordTests(IsolatedAsyncioTestCase):
         async def inline(function, *args):
             return function(*args)
 
-        with patch("verify.discord_bot.asyncio.to_thread", inline), patch(
-            "verify.discord_bot.verify", return_value=result
-        ) as verify:
+        with (
+            patch("verify.discord_bot.asyncio.to_thread", inline),
+            patch("verify.discord_bot.enforce_limit", return_value=None),
+            patch("verify.discord_bot.verify", return_value=result) as verify,
+        ):
             await command.callback(self.bot, self.interaction, material)
         self.interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
         return verify, self.interaction.edit_original_response.await_args.kwargs
@@ -30,13 +32,18 @@ class DiscordTests(IsolatedAsyncioTestCase):
         url = "https://example.org/tekst"
         verify, reply = await self.submit(url, {
             "status": "resolved", "verdict": "true", "explanation": "Zgodne z komunikatem.",
-            "evidence": [{"title": "Komunikat", "quote": "Fragment", "url": "https://example.org/dowod"}],
+            "evidence": [{"title": "Komunikat", "quote": "Fragment", "url": "https://example.org/dowod",
+                          "publisher": "Testowy urząd", "published_at": "2026-11-19",
+                          "retrieved_at": "2026-11-21T10:00:00+00:00"}],
         })
         from .audit import discord_session_key
         verify.assert_called_once_with(url, mode="url", channel="discord",
                                        session_key=discord_session_key(12345, 67890))
         self.assertIn("Potwierdzone", reply["content"])
         self.assertIn("<https://example.org/dowod>", reply["content"])
+        self.assertIn("Testowy urząd", reply["content"])
+        self.assertIn("Data publikacji: 2026-11-19.", reply["content"])
+        self.assertIn("Pobrano: 2026-11-21", reply["content"])
 
     async def test_long_abstention(self):
         verify, reply = await self.submit("Twierdzenie", {
@@ -77,3 +84,14 @@ class DiscordTests(IsolatedAsyncioTestCase):
         self.assertEqual(thread.await_args.args[1:], (discord_session_key(12345, 67890),))
         self.interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
         self.assertIn("została usunięta", self.interaction.edit_original_response.await_args.kwargs["content"])
+
+    async def test_rate_limit_stops_verification_and_replies_privately(self):
+        command = self.bot.tree.get_command("sprawdz", guild=self.bot.guild_scope)
+        with (
+            patch("verify.discord_bot.enforce_limit", return_value=45),
+            patch("verify.discord_bot.verify") as verify,
+        ):
+            await command.callback(self.bot, self.interaction, "Twierdzenie")
+        verify.assert_not_called()
+        self.interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+        self.assertIn("45 s", self.interaction.edit_original_response.await_args.kwargs["content"])

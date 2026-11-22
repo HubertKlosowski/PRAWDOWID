@@ -225,3 +225,5 @@ __marimo__/
 data
 *.csv
 *.env
+
+!corpus/demo-sources.csv

@@ -20,7 +20,7 @@ from django.conf import settings
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 
-from .models import VerificationRun, VerificationSession
+from .models import RateLimitBucket, SecurityEvent, VerificationRun, VerificationSession
 from .privacy import mask_text, url_origin
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,10 @@ def prune_expired(now=None):
         expired = VerificationSession.objects.select_for_update().filter(expires_at__lte=now)
         ids = list(expired.order_by("pk").values_list("pk", flat=True))
         _, counts = VerificationSession.objects.filter(pk__in=ids).delete()
+        expired_buckets = list(RateLimitBucket.objects.select_for_update(skip_locked=True)
+                               .filter(expires_at__lte=now).values_list("pk", flat=True))
+        RateLimitBucket.objects.filter(pk__in=expired_buckets).delete()
+        SecurityEvent.objects.filter(created_at__lte=now - retention_period()).delete()
     return {
         "sessions": counts.get(VerificationSession._meta.label, 0),
         "runs": counts.get(VerificationRun._meta.label, 0),
@@ -144,6 +148,20 @@ def measure(stage):
         raise
     finally:
         summary["ms"] += round((perf_counter() - start) * 1000)
+
+
+def record_security_event(code, *, channel=None):
+    trace = _trace.get()
+    if trace is None and channel is None:
+        return
+    try:
+        with transaction.atomic():
+            SecurityEvent.objects.create(
+                code=code, channel=channel or trace.channel,
+                request_id=trace.request_id if trace else None, created_at=timezone.now(),
+            )
+    except DatabaseError as exc:
+        logger.warning("Security event unavailable (%s)", type(exc).__name__)
 
 
 def record_model(role, name, backend, revision=None):

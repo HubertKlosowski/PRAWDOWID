@@ -1,5 +1,6 @@
 from pgvector.django import CosineDistance
 
+from .corpus import SOURCE_FIELDS, default_domain
 from .embeddings import embed
 from .models import Chunk
 from .temporal import DATE_FIELDS
@@ -18,6 +19,10 @@ def search(text, limit):
          "text": row.text, "title": row.document.title,
          "url": row.document.url, "fetched_at": row.document.fetched_at.isoformat(),
          "retrieved_at": row.document.fetched_at.isoformat(),
+         "original_url": row.document.original_url or row.document.url,
+         "source_domain": row.document.source_domain or default_domain(row.document.url),
+         **{field: getattr(row.document, field) for field in SOURCE_FIELDS
+            if field not in ("original_url", "source_domain")},
          **{field: value.isoformat() if (value := getattr(row.document, field)) else None
             for field in DATE_FIELDS}}
         for row in rows

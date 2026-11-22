@@ -14,7 +14,7 @@ from . import audit, google_fact_check
 from .analysis import assess, fact_check_queries, select_fact_checks, select_relevant, unresolved
 from .claims import extract_claims
 from .evidence_strength import evidence_strength
-from .fetch import SourceUnavailable, fetch
+from .fetch import SourceUnavailable, UnsafeTarget, fetch
 from .privacy import mask_text
 from .retrieval import search as search_corpus
 from .temporal import ARCHIVE_WARNING, PERIOD_MISMATCH, archived, claim_period, period_fit
@@ -114,6 +114,7 @@ def _verify_material(material, mode, complete, search):
         except SourceUnavailable as exc:
             return unresolved("material_unavailable", str(exc), reason_code="article_unreadable")
         except ValueError as exc:
+            audit.record_security_event("blocked_url_address" if isinstance(exc, UnsafeTarget) else "rejected_url")
             raise InvalidMaterial(str(exc), reason_code="invalid_url") from exc
         if len(material) > MAX_MATERIAL_LENGTH:
             return unresolved("material_unavailable", "Artykuł przekracza limit. Wklej fragment do sprawdzenia.",
@@ -125,6 +126,8 @@ def _verify_material(material, mode, complete, search):
     try:
         claims, truncated = extract_claims(material, complete=complete)
     except Exception as exc:
+        if isinstance(exc, ValueError):
+            audit.record_security_event("invalid_model_response")
         logger.warning("Claim extraction unavailable (%s)", type(exc).__name__)
         return unresolved("technical_error", "Nie udało się wydzielić twierdzeń ze zgłoszenia.",
                           reason_code="claim_extraction_failed")
@@ -208,7 +211,10 @@ def _verify_evidence(material, fact_checks, complete, search, now, period):
         eligible = [chunk for fit, chunk in ranked if fit < 2]
         try:
             selected = select_relevant(material, eligible, limit, complete=complete, period=period)
-        except JSONDecodeError:
+        except ValueError as exc:
+            audit.record_security_event("invalid_model_response")
+            if not isinstance(exc, JSONDecodeError):
+                raise
             logger.warning("Model returned invalid JSON while ranking candidates")
             selected = []
     except Exception as exc:

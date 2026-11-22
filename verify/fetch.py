@@ -27,6 +27,10 @@ class SourceUnavailable(ValueError):
     """The URL was accepted but yielded no usable material."""
 
 
+class UnsafeTarget(ValueError):
+    """URL resolution was blocked by address safety checks."""
+
+
 class ArticleParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -120,10 +124,10 @@ def _target(url, allowed_hosts):
     for _, _, _, _, addr in records:
         ip = ipaddress.ip_address(addr[0])
         if not ip.is_global or ip.is_multicast or ip.is_reserved:
-            raise ValueError("Dozwolone są wyłącznie publiczne adresy serwerów.")
+            raise UnsafeTarget("Dozwolone są wyłącznie publiczne adresy serwerów.")
         if ip.version == 6 and (ip not in ipaddress.ip_network("2000::/3")
                                 or ip.sixtofour or ip.teredo):
-            raise ValueError("Niedozwolony zakres adresów IPv6.")
+            raise UnsafeTarget("Niedozwolony zakres adresów IPv6.")
     path = quote(parts.path or "/", safe="/%:@!$&'()*+,;=-._~")
     query = quote(parts.query, safe="/?%:@!$&'()*+,;=-._~")
     authority = f"[{host}]" if ":" in host else host

@@ -7,6 +7,11 @@ EMBEDDING_SIZE = 1024
 class Document(models.Model):
     url = models.URLField(max_length=2048, unique=True)
     title = models.TextField()
+    original_url = models.URLField(max_length=2048, blank=True)
+    publisher = models.CharField(max_length=200, blank=True)
+    source_domain = models.CharField(max_length=253, blank=True)
+    source_kind = models.CharField(max_length=100, blank=True)
+    source_type = models.CharField(max_length=16, blank=True)
     fetched_at = models.DateTimeField()
     published_at = models.DateField(null=True, blank=True)
     valid_from = models.DateTimeField(null=True, blank=True)
@@ -45,3 +50,17 @@ class VerificationRun(models.Model):
     models_used = models.JSONField(default=dict)
     estimated_cost = models.DecimalField(max_digits=12, decimal_places=6, null=True)
     cost_method = models.CharField(max_length=24, default="unknown")
+
+
+class RateLimitBucket(models.Model):
+    key = models.CharField(max_length=64, primary_key=True)
+    attempts = models.JSONField(default=list)
+    last_blocked_at = models.DateTimeField(null=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+
+class SecurityEvent(models.Model):
+    created_at = models.DateTimeField(db_index=True)
+    channel = models.CharField(max_length=8)
+    code = models.CharField(max_length=32)
+    request_id = models.UUIDField(null=True)

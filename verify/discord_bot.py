@@ -9,6 +9,7 @@ from discord import app_commands
 from django.db import DatabaseError, connections
 
 from .audit import delete_session, discord_session_key
+from .security import enforce_limit, limit_message
 from .verification import InvalidMaterial, material_mode, verify
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,17 @@ def _render_claim(result):
     if result.get("google_fact_check_unavailable"):
         lines.append("Wyszukiwanie w Google Fact Check jest niedostępne lub niepełne.")
     for item in result.get("evidence", []):
-        lines.append(f'{item["title"]} — „{item["quote"]}”\n<{item["url"]}>')
+        publisher = item.get("publisher") or "Wydawca nieustalony"
+        publication = item.get("published_at") or "nieznana"
+        dates = f"Data publikacji: {publication}."
+        if retrieved_at := item.get("retrieved_at"):
+            dates += f" Pobrano: {retrieved_at}."
+        if item.get("valid_from") or item.get("valid_to"):
+            start = item.get("valid_from")
+            end = item.get("valid_to")
+            bounds = " ".join(part for part in (f"od {start}" if start else "", f"do {end}" if end else "") if part)
+            dates += f" Okres ważności {bounds}."
+        lines.append(f'{item["title"]} · {publisher}\n{dates}\n„{item["quote"]}”\n<{item["url"]}>')
     for item in result.get("fact_checks", []):
         lines.append(f'Weryfikacja wydawcy — {item["review_title"] or item["publisher"]}\n<{item["source_url"]}>')
     return lines
@@ -62,6 +73,9 @@ def _render_claim(result):
 
 def check_material(material, session_key):
     try:
+        retry_after = enforce_limit("discord", session_key)
+        if retry_after is not None:
+            return [limit_message(retry_after)]
         result = verify(material, mode=material_mode(material), session_key=session_key, channel="discord")
         lines = render_result(result)
         if result.get("audit_unavailable"):

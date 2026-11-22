@@ -57,7 +57,7 @@ class EvidenceStrengthTests(SimpleTestCase):
 
 
 @patch.dict("os.environ", GOOGLE_FACTCHECK_API_KEY="")
-@override_settings(PRAWDOWID_AUDIT_ENABLED=False)
+@override_settings(PRAWDOWID_AUDIT_ENABLED=False, PRAWDOWID_RATE_LIMIT_ENABLED=False)
 class EvidenceOutcomeTests(SimpleTestCase):
     def test_factual_claim_without_results_never_receives_scope_verdict(self):
         complete = Mock(return_value=EXTRACTED)

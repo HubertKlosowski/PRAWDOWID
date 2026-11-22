@@ -42,7 +42,7 @@ class Command(BaseCommand):
                 failed += 1
                 self.stderr.write(f"{url}: {exc}")
             else:
-                yield final_url, title, text, timezone.now(), dates
+                yield final_url, title, text, timezone.now(), {**dates, "original_url": url}
             sleep(1)
         if failed:
             raise CommandError(f"Liczba niedostępnych stron: {failed}.")

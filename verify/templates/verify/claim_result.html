@@ -30,7 +30,9 @@
         <strong>{% if e.relation == 'supports' %}Za{% elif e.relation == 'contradicts' %}Przeciw{% elif e.relation == 'qualifies' %}Kontekst zmieniający sens{% else %}Kontekst{% endif %}</strong>
         <blockquote>{{ e.quote }}</blockquote>
         <a href="{{ e.url }}" rel="noopener noreferrer">{{ e.title }}</a>
+        <p>{{ e.publisher|default:"Wydawca nieustalony" }}{% if e.source_kind %} · {{ e.source_kind }}{% endif %}</p>
         <p>Dokument {{ e.document_id }}, fragment {{ e.position|add:1 }}. Data publikacji {{ e.published_at|default:"nieznana" }}. Pobrano {{ e.retrieved_at }}.</p>
+        {% if e.valid_from or e.valid_to %}<p>Okres ważności {% if e.valid_from %}od {{ e.valid_from }}{% endif %}{% if e.valid_to %} do {{ e.valid_to }}{% endif %}.</p>{% endif %}
       </article>
     {% endfor %}
   {% endif %}

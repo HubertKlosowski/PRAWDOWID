@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.core.management.base import CommandError
 from django.test import SimpleTestCase
 
 from .management.commands import serve_demo
@@ -25,6 +26,18 @@ class DemoServingTests(SimpleTestCase):
                 embedding.reset_mock()
                 local_llm.reset_mock()
                 serve.reset_mock()
+
+    @patch("verify.management.commands.serve_demo.load_model", side_effect=OSError("missing weights"))
+    def test_embedding_startup_failure_names_the_dependency(self, embedding):
+        with self.assertRaisesMessage(CommandError, "modelu embeddingowego"):
+            serve_demo.Command().preload_models()
+
+    @patch("verify.management.commands.serve_demo.load_model")
+    @patch("verify.management.commands.serve_demo.load_local_model", side_effect=RuntimeError("CUDA out of memory"))
+    @patch.dict("os.environ", PRAWDOWID_LLM_URL="")
+    def test_local_llm_startup_failure_names_the_dependency(self, llm, embedding):
+        with self.assertRaisesMessage(CommandError, "lokalnego modelu oceniającego"):
+            serve_demo.Command().preload_models()
 
     def test_packed_decoder_accepts_prompt_and_single_token_shapes(self):
         import torch
